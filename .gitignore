@@ -1,0 +1,6 @@
+__pycache__
+.idea
+.tox
+.coverage
+fs.onedatarestfs.egg-info/
+tmp

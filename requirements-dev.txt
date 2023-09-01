@@ -1,0 +1,6 @@
+tox
+requests
+flake8
+yapf
+isort
+mypy
