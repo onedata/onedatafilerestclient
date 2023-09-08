@@ -8,10 +8,7 @@ sourcesRoot: ".."
 # Determines if onedata components should be started from pre-compiled sources
 # or pre-installed packages inside dockers. When enabled, sources are expected
 # to be found in CWD (from where the 'up' script was run) or one dir above.
-sources:
-  onezone:
-    node-1:
-      - oz-worker
+sources: false
 
 # Onezone image to use. Note that if 'sources' option is enabled, it must
 # be based off onedata/worker image (it contains all the machinery to run the
@@ -23,7 +20,6 @@ onezoneImage: "docker.onedata.org/onezone-dev:develop"
 # be based off onedata/worker image (images based off onedata-worker are
 # images with -dev suffix).
 oneproviderImage: "docker.onedata.org/oneprovider-dev:develop"
-
 
 
 # Determines if elastic search should start.
