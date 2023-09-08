@@ -25,18 +25,16 @@ with open("README.md", "rt") as f:
 
 REQUIREMENTS = ["requests"]
 
-setup(
-    name="onedatafilerestclient",
-    author="Bartek Kryza",
-    author_email="bkryza@gmail.com",
-    classifiers=CLASSIFIERS,
-    description="Onedata REST file API client",
-    install_requires=REQUIREMENTS,
-    license="MIT",
-    long_description=DESCRIPTION,
-    packages=["onedatafilerestclient"],
-    keywords=["Onedata"],
-    test_suite="nose.collector",
-    url="https://github.com/onedata/onedatafilerestclient",
-    version=__version__
-)
+setup(name="onedatafilerestclient",
+      author="Bartek Kryza",
+      author_email="bkryza@gmail.com",
+      classifiers=CLASSIFIERS,
+      description="Onedata REST file API client",
+      install_requires=REQUIREMENTS,
+      license="MIT",
+      long_description=DESCRIPTION,
+      packages=["onedatafilerestclient"],
+      keywords=["Onedata"],
+      test_suite="nose.collector",
+      url="https://github.com/onedata/onedatafilerestclient",
+      version=__version__)

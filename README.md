@@ -4,7 +4,7 @@ OnedataFileRESTClient is a Python client to the Onedata file REST API [Onedata R
 
 ## Installing
 
-You can install OnedataRESTFS from pip as follows:
+You can install OnedataFileRESTClient from pip as follows:
 
 ```
 pip install onedatafilerestclient

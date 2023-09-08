@@ -8,32 +8,48 @@ __copyright__ = "Copyright (C) 2023 Onedata"
 __license__ = (
     "This software is released under the MIT license cited in LICENSE.txt")
 
+from typing import Optional
+
 import requests
 
 
 class OnedataRESTError(Exception):
     """Custom Onedata REST exception class."""
-    def __init__(self, response: requests.Response):
+    def __init__(self,
+                 http_code: int,
+                 error_category: Optional[str] = None,
+                 error_details: Optional[str] = None,
+                 description: Optional[str] = None):
+        """Construct from individual properties."""
+        self.http_code = http_code
+        self.error_category = error_category
+        self.error_details = error_details
+        self.description = description
+
+    @classmethod
+    def from_response(cls, response: requests.Response) -> OnedataRESTError:
         """Construct from a requests response object."""
-        self.http_code = response.status_code
-        self.error_category = None
-        self.error_details = None
-        self.description = None
+        http_code = response.status_code
+        error_category = None
+        error_details = None
+        description = None
 
         try:
-            self.error_category = response.json()['error']['id']
+            error_category = response.json()['error']['id']
         except:  # noqa
             pass
 
         try:
-            self.error_details = response.json()['error']['details']
+            error_details = response.json()['error']['details']
         except:  # noqa
             pass
 
         try:
-            self.description = response.json()['error']['description']
+            description = response.json()['error']['description']
         except:  # noqa
             pass
+
+        return cls(http_code, error_category, error_details, description)
 
     def __repr__(self) -> str:
         """Return unique representation of the OnedataRESTFS instance."""

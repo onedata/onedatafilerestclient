@@ -1,0 +1,6 @@
+[submodule "one-env"]
+	path = one-env
+	url = ssh://git@git.onedata.org:7999/vfs/one-env
+[submodule "bamboos"]
+	path = bamboos
+	url = ssh://git@git.onedata.org:7999/vfs/bamboos
