@@ -1,25 +1,31 @@
+# coding: utf-8
+"""Test OnedataFileRESTClient methods."""
+
 import os
 import time
 
-import pytest
-
 from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
+
+import pytest
 
 from .common import random_bytes, random_int, random_path, random_str
 
 
 @pytest.fixture
 def client(onezone_ip, onezone_admin_token):
+    """Create OnedataFileRESTClient instance."""
     return OnedataFileRESTClient(onezone_ip, onezone_admin_token)
 
 
 @pytest.fixture
 def client_ro(onezone_ip, onezone_readonly_token):
+    """Create readonly OnedataFileRESTClient instance."""
     return OnedataFileRESTClient(onezone_ip, onezone_readonly_token)
 
 
 @pytest.fixture
 def client_krakow(onezone_ip, onezone_admin_token):
+    """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
     return OnedataFileRESTClient(
         onezone_ip, onezone_admin_token,
         ['dev-oneprovider-krakow.default.svc.cluster.local'])
@@ -27,25 +33,28 @@ def client_krakow(onezone_ip, onezone_admin_token):
 
 @pytest.fixture
 def client_ro_krakow(onezone_ip, onezone_readonly_token):
+    """Create OnedataFileRESTClient instance bound to 'paris' provider."""
     return OnedataFileRESTClient(
         onezone_ip, onezone_readonly_token,
         ['dev-oneprovider-krakow.default.svc.cluster.local'])
 
 
 def test_list_spaces(client):
+    """Test 'list_spaces' method."""
     spaces = client.list_spaces()
 
     assert 'test_onedatarestfs' in spaces
-    # assert 'test_onedatarestfs_paris' in spaces
 
 
 def test_unsupported_space(client):
+    """Test handling of an unsupported space."""
     spaces = client.list_spaces()
 
     assert 'test_onedatarestfs_nosupport' not in spaces
 
 
 def test_create_file(client):
+    """Test 'create_file' method."""
     file_path = random_path()
     file_id = client.create_file('test_onedatarestfs', file_path, 'REG', True)
     file_content = random_bytes(1024)
@@ -61,13 +70,14 @@ def test_create_file(client):
 
 
 def test_create_and_list_files(client):
-    FILE_COUNT = 24
+    """Test 'readdir' method."""
+    file_count = 24
 
     test_dir = random_path()
 
     files = [
         os.path.join(test_dir, random_str(random_int(lower_bound=10)))
-        for _ in range(FILE_COUNT)
+        for _ in range(file_count)
     ]
 
     for f in files:
@@ -76,13 +86,14 @@ def test_create_and_list_files(client):
     res = client.readdir('test_onedatarestfs', test_dir)
 
     assert 'children' in res
-    assert len(res['children']) == FILE_COUNT
+    assert len(res['children']) == file_count
 
 
 def test_delete_file(client):
+    """Test 'remove' method."""
     test_dir = random_path()
     file_path = os.path.join(test_dir, random_str())
-    file_id = client.create_file('test_onedatarestfs', file_path, 'REG', True)
+    client.create_file('test_onedatarestfs', file_path, 'REG', True)
 
     res = client.readdir('test_onedatarestfs', test_dir)
 
@@ -96,13 +107,14 @@ def test_delete_file(client):
 
 
 def test_rename_file(client):
+    """Test 'move' method."""
     test_dir = random_path()
     file_path = os.path.join(test_dir, random_str())
 
     target_test_dir = random_path()
     target_file_path = os.path.join(target_test_dir, random_str())
 
-    file_id = client.create_file('test_onedatarestfs', file_path, 'REG', True)
+    client.create_file('test_onedatarestfs', file_path, 'REG', True)
 
     res = client.readdir('test_onedatarestfs', test_dir)
 
@@ -123,6 +135,7 @@ def test_rename_file(client):
 
 
 def test_readonly_token_read_same_provider(client_krakow, client_ro_krakow):
+    """Test 'get_file_content' method using readonly token."""
     test_dir = random_path()
     file_path = os.path.join(test_dir, random_str())
 
@@ -143,6 +156,7 @@ def test_readonly_token_read_same_provider(client_krakow, client_ro_krakow):
 
 
 def test_readonly_token_read_random_provider(client, client_ro):
+    """Test 'get_file_content' method using ro token from any provider."""
     test_dir = random_path()
     file_path = os.path.join(test_dir, random_str())
 
@@ -171,6 +185,7 @@ def test_readonly_token_read_random_provider(client, client_ro):
 
 
 def test_readonly_token_delete_eacces(client_krakow, client_ro_krakow):
+    """Test 'remove' method using readonly token."""
     test_dir = random_path()
     file_path = os.path.join(test_dir, random_str())
 
@@ -191,7 +206,7 @@ def test_readonly_token_delete_eacces(client_krakow, client_ro_krakow):
 
 
 def test_enoent_space(client):
-
+    """Test 'get_file_content' on non-existing space."""
     with pytest.raises(OnedataRESTError) as excinfo:
         client.get_file_content('NO_SUCH_SPACE',
                                 0,
@@ -206,7 +221,7 @@ def test_enoent_space(client):
 
 
 def test_enoent_file(client):
-
+    """Test 'get_file_content' on non-existing file."""
     test_dir = random_path()
     file_path = os.path.join(test_dir, random_str())
 

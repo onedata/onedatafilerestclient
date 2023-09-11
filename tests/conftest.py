@@ -1,14 +1,15 @@
-"""Authors: Bartek Kryza
-Copyright (C) 2021 onedata.org
-This software is released under the MIT license cited in 'LICENSE.txt'
-"""
+# coding: utf-8
+"""Pytest test setup."""
+
 import logging
 import os
 import time
 import uuid
 
 import pytest
+
 import requests
+
 from urllib3.util import connection
 
 
@@ -33,7 +34,7 @@ _original_create_connection = connection.create_connection
 
 
 def patched_create_connection(address, *args, **kwargs):
-    """Resolve Kubernetes domain names to IP's from environment variables"""
+    """Resolve Kubernetes domain names to IP's from environment variables."""
     host, port = address
     hostname = host
 
@@ -52,41 +53,47 @@ connection.create_connection = patched_create_connection
 
 @pytest.fixture(scope="module", autouse=True)
 def wait_for_support_sync():
-    """Wait until providers are fully synchronized after setup"""
+    """Wait until providers are fully synchronized after setup."""
     time.sleep(10)
 
 
 @pytest.fixture(scope=FIXTURE_SCOPE)
 def git_version():
+    """Get version based on Git commit."""
     gv = os.getenv('GIT_VERSION')
     yield gv
 
 
 @pytest.fixture
 def uuid_str():
+    """Generate UUID v4."""
     return str(uuid.uuid4())
 
 
 @pytest.fixture(scope=FIXTURE_SCOPE)
 def onezone_ip():
+    """Get Onezone IP from environment variable."""
     ozip = os.getenv('DEV_ONEZONE_0')
     yield ozip
 
 
 @pytest.fixture(scope=FIXTURE_SCOPE)
 def oneprovider_krakow_ip():
+    """Get Oneprovider 'krakow' IP from environment variable."""
     opip = os.getenv('DEV_ONEPROVIDER_KRAKOW_0')
     yield opip
 
 
 @pytest.fixture(scope=FIXTURE_SCOPE)
 def oneprovider_paris_ip():
+    """Get Oneprovider 'paris' IP from environment variable."""
     opip = os.getenv('DEV_ONEPROVIDER_PARIS_0')
     yield opip
 
 
 @pytest.fixture(scope=FIXTURE_SCOPE)
 def onezone_admin_token(onezone_ip):
+    """Generate a new client token."""
     tokens_endpoint = f'https://{onezone_ip}/api/v3/onezone/user/client_tokens'
     res = requests.post(tokens_endpoint, {},
                         auth=requests.auth.HTTPBasicAuth('admin', 'password'),
@@ -96,7 +103,9 @@ def onezone_admin_token(onezone_ip):
 
 @pytest.fixture(scope=FIXTURE_SCOPE)
 def onezone_readonly_token(onezone_ip):
-    tokens_endpoint = f'https://{onezone_ip}/api/v3/onezone/user/tokens/temporary'
+    """Generate new readonly only client token."""
+    temporary_token_path = 'api/v3/onezone/user/tokens/temporary'
+    tokens_endpoint = f'https://{onezone_ip}/{temporary_token_path}'
     headers = {'content-type': 'application/json'}
     res = requests.post(tokens_endpoint,
                         json={
