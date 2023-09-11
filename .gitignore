@@ -5,4 +5,4 @@ __pycache__
 onedatafilerestclient.egg-info/
 tmp
 test.py
-onedatafilerestclient.xml
+onedatafilerestclient-tests-results.xml
