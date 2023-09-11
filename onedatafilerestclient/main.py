@@ -1,5 +1,6 @@
 # coding: utf-8
 """Onedata REST file API client."""
+# mypy: disable-error-code="method-assign"
 
 from __future__ import annotations
 
@@ -41,6 +42,12 @@ class OnedataFileRESTClient:
         self.token_client = HttpClient()
         self.preferred_oneproviders = preferred_oneproviders
 
+        # lru_cache cannot be used as decorator, as we want to have a separate
+        # cache for each OnedataFileRESTClient instance
+        self.get_provider_for_space = lru_cache(maxsize=512)(
+            self.get_provider_for_space)
+        self.get_space_id = lru_cache(maxsize=512)(self.get_space_id)
+
         self.client.get_session().headers.update({'X-Auth-Token': self.token})
 
     def __setattr__(self, name: str, value: str) -> None:
@@ -73,7 +80,7 @@ class OnedataFileRESTClient:
 
     def get_token_scope(self) -> Any:
         """Get current token access scope."""
-        url = self.oz_url('/user/infer_token_scope')
+        url = self.oz_url('/tokens/infer_access_token_scope')
         caps = self.token_client.post(url, {'token': self.token})
         return caps.json()
 
@@ -93,7 +100,6 @@ class OnedataFileRESTClient:
                 return self.get_file_id(space_name, file_path, retries - 1)
             raise e
 
-    @lru_cache
     def get_space_id(self, space_name: str) -> Optional[str]:
         """Get space id by name."""
         caps = self.get_token_scope()
@@ -107,7 +113,6 @@ class OnedataFileRESTClient:
         raise OnedataRESTError(400, 'posix',
                                f'Space {space_name} doesn\'t exist', 'enoent')
 
-    @lru_cache
     def get_provider_for_space(self, space_name: str) -> str:
         """Get Oneprovider domain for a specific space."""
         space_id = self.get_space_id(space_name)

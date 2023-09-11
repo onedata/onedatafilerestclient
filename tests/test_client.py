@@ -174,9 +174,11 @@ def test_readonly_token_delete_eacces(client_krakow, client_ro_krakow):
     test_dir = random_path()
     file_path = os.path.join(test_dir, random_str())
 
-    file_id = client_krakow.create_file('test_onedatarestfs', file_path, 'REG', True)
+    file_id = client_krakow.create_file('test_onedatarestfs', file_path, 'REG',
+                                        True)
     file_content = random_bytes(1024)
-    client_krakow.put_file_content('test_onedatarestfs', file_id, 0, file_content)
+    client_krakow.put_file_content('test_onedatarestfs', file_id, 0,
+                                   file_content)
 
     with pytest.raises(OnedataRESTError) as excinfo:
         client_ro_krakow.remove('test_onedatarestfs', file_path)

@@ -50,6 +50,12 @@ def patched_create_connection(address, *args, **kwargs):
 connection.create_connection = patched_create_connection
 
 
+@pytest.fixture(scope="module", autouse=True)
+def wait_for_support_sync():
+    """Wait until providers are fully synchronized after setup"""
+    time.sleep(10)
+
+
 @pytest.fixture(scope=FIXTURE_SCOPE)
 def git_version():
     gv = os.getenv('GIT_VERSION')
