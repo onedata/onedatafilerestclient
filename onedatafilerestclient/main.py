@@ -23,7 +23,7 @@ from .httpclient import HttpClient
 
 class OnedataFileRESTClient:
     """Custom REST client for Onedata REST basic file operations API."""
-    timeout: int = 5
+    timeout: int = 30
     onezone_host: str
     token: str
     preferred_oneproviders: list[str]

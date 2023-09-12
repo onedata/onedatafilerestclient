@@ -36,8 +36,6 @@ class HttpClient:
                       data: Any = None,
                       headers: dict[str, str] = {}) -> requests.Response:
         """Perform an HTTP request."""
-        logging.debug(f">> {method} {url} {headers}")
-
         if 'Content-type' not in headers:
             headers['Content-type'] = 'application/json'
 
@@ -50,8 +48,6 @@ class HttpClient:
         if not response.ok:
             logging.debug(f"ERROR: {method} {url} '{response.text}'")
             raise OnedataRESTError.from_response(response)
-
-        logging.debug(f'<< {response.content.decode("utf-8")}')
 
         return response
 
