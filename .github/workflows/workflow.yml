@@ -1,0 +1,29 @@
+name: Main workflow
+on:
+  push:
+    branches:
+      - "**"
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+jobs:
+  python3:
+    name: Test on Python 3
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      matrix:
+        operating-system: [ ubuntu-latest ]
+        python-version: [ '3.8']
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Install Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - run: pip install 'urllib3<2' 'requests<2.29.0' tox tox-gh-actions
+    - run: tox -c tox.ini -e flake8,yapf,mypy
