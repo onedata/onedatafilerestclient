@@ -34,7 +34,9 @@ class HttpClient:
                       method: str,
                       url: str,
                       data: Any = None,
-                      headers: dict[str, str] = {}) -> requests.Response:
+                      headers: dict[str, str] = {},
+                      *,
+                      stream: bool = False) -> requests.Response:
         """Perform an HTTP request."""
         if 'Content-type' not in headers:
             headers['Content-type'] = 'application/json'
@@ -42,6 +44,7 @@ class HttpClient:
         req = requests.Request(method, url, data=data, headers=headers)
         prepared = self.session.prepare_request(req)
         response = self.session.send(prepared,
+                                     stream=stream,
                                      timeout=self.timeout,
                                      verify=False)
 
@@ -54,9 +57,11 @@ class HttpClient:
     def get(self,
             url: str,
             data: Any = None,
-            headers: dict[str, str] = {}) -> requests.Response:
+            headers: dict[str, str] = {},
+            *,
+            stream: bool = False) -> requests.Response:
         """Perform a GET request."""
-        return self._send_request('GET', url, data, headers)
+        return self._send_request('GET', url, data, headers, stream=stream)
 
     def put(self,
             url: str,

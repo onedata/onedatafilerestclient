@@ -13,7 +13,7 @@ import json
 import random
 import typing
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 import requests
 
@@ -204,6 +204,21 @@ class OnedataFileRESTClient:
         url = self.op_url(space_name, path)
         result = self.client.get(url, headers=headers).content
         return result
+
+    def iter_file_content(self,
+                          space_name: str,
+                          chunk_size: int,
+                          file_path: Optional[str] = None,
+                          file_id: Optional[str] = None) -> Iterator[bytes]:
+        """Iterate file content."""
+        if file_id is None:
+            if file_path is None:
+                raise ValueError(
+                    'Both file_path and file_id arguments cannot be None')
+            file_id = self.get_file_id(space_name, file_path)
+        path = f'/data/{file_id}/content'
+        url = self.op_url(space_name, path)
+        return self.client.get(url, stream=True).iter_content(chunk_size)
 
     def put_file_content(self, space_name: str, file_id: str,
                          offset: Optional[int], data: bytes) -> None:
