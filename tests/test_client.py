@@ -236,3 +236,25 @@ def test_enoent_file(client):
     assert e.error_category == 'posix'
     assert e.error_details == {"errno": "enoent"}
     assert e.description == "Operation failed with POSIX error: enoent."
+
+
+def test_iterating_file_content(client_krakow):
+    """Test 'iter_file_content'."""
+    test_dir = random_path()
+    file_path = os.path.join(test_dir, random_str())
+
+    file_id = client_krakow.create_file('test_onedatarestfs', file_path, 'REG',
+                                        True)
+    file_content = random_bytes(1024)
+    client_krakow.put_file_content('test_onedatarestfs', file_id, 0,
+                                   file_content)
+
+    chunk_size = random_int(4, 100)
+    buff = b''
+    for chunk in client_krakow.iter_file_content('test_onedatarestfs',
+                                                 chunk_size,
+                                                 file_id=file_id):
+        assert len(chunk) <= chunk_size
+        buff += chunk
+
+    assert buff == file_content
