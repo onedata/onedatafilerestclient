@@ -34,12 +34,14 @@ class OnedataFileRESTClient:
     def __init__(self,
                  onezone_host: str,
                  token: str,
-                 preferred_oneproviders: list[str] = []):
+                 preferred_oneproviders: list[str] = [],
+                 *,
+                 verify_ssl: bool = True):
         """Construct OnedataFileClient instance."""
         super().__setattr__('onezone_host', onezone_host)
         super().__setattr__('token', token)
-        self.client = HttpClient()
-        self.token_client = HttpClient()
+        self.client = HttpClient(verify_ssl=verify_ssl)
+        self.token_client = HttpClient(verify_ssl=verify_ssl)
         self.preferred_oneproviders = preferred_oneproviders
 
         # lru_cache cannot be used as decorator, as we want to have a separate

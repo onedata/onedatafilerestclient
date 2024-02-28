@@ -22,9 +22,10 @@ class HttpClient:
     timeout: int = 5
     session: requests.Session
 
-    def __init__(self) -> None:
+    def __init__(self, *, verify_ssl: bool = True) -> None:
         """Construct OnedataFileClient instance."""
         self.session = requests.Session()
+        self.session.verify = verify_ssl
 
     def get_session(self) -> requests.Session:
         """Return requests session instance."""
@@ -45,8 +46,7 @@ class HttpClient:
         prepared = self.session.prepare_request(req)
         response = self.session.send(prepared,
                                      stream=stream,
-                                     timeout=self.timeout,
-                                     verify=False)
+                                     timeout=self.timeout)
 
         if not response.ok:
             logging.debug(f"ERROR: {method} {url} '{response.text}'")

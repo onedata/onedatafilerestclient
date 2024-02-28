@@ -8,35 +8,59 @@ from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 
 import pytest
 
+from requests.exceptions import SSLError
+
 from .common import random_bytes, random_int, random_path, random_str
+
+
+@pytest.fixture
+def client_verifying_ssl(onezone_ip, onezone_admin_token):
+    """Create OnedataFileRESTClient instance."""
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_admin_token,
+                                 verify_ssl=True)
 
 
 @pytest.fixture
 def client(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance."""
-    return OnedataFileRESTClient(onezone_ip, onezone_admin_token)
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_admin_token,
+                                 verify_ssl=False)
 
 
 @pytest.fixture
 def client_ro(onezone_ip, onezone_readonly_token):
     """Create readonly OnedataFileRESTClient instance."""
-    return OnedataFileRESTClient(onezone_ip, onezone_readonly_token)
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_readonly_token,
+                                 verify_ssl=False)
 
 
 @pytest.fixture
 def client_krakow(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
     return OnedataFileRESTClient(
-        onezone_ip, onezone_admin_token,
-        ['dev-oneprovider-krakow.default.svc.cluster.local'])
+        onezone_ip,
+        onezone_admin_token,
+        ['dev-oneprovider-krakow.default.svc.cluster.local'],
+        verify_ssl=False)
 
 
 @pytest.fixture
 def client_ro_krakow(onezone_ip, onezone_readonly_token):
     """Create OnedataFileRESTClient instance bound to 'paris' provider."""
     return OnedataFileRESTClient(
-        onezone_ip, onezone_readonly_token,
-        ['dev-oneprovider-krakow.default.svc.cluster.local'])
+        onezone_ip,
+        onezone_readonly_token,
+        ['dev-oneprovider-krakow.default.svc.cluster.local'],
+        verify_ssl=False)
+
+
+def test_ssl_verification(client_verifying_ssl):
+    """Test 'OnedataFileRESTClient' respects 'verify_ssl' flag."""
+    with pytest.raises(SSLError):
+        assert client_verifying_ssl.list_spaces()
 
 
 def test_list_spaces(client):
