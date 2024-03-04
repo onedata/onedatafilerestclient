@@ -1,4 +1,4 @@
-.PHONY: submodules venv init format flake8 yapf mypy link
+.PHONY: submodules venv init format flake8 yapf mypy link dist pypi_check pypi_upload
 
 submodules:
 		git submodule sync --recursive ${submodule}
@@ -30,5 +30,11 @@ lint: flake8 yapf mypy
 test:
 		python3 -m tox -e test
 
+dist:
+		python3 -m build
 
+pypi_check: dist
+		python3 -m twine check dist/*
 
+pypi_upload: pypi_check
+		python3 -m twine upload --verbose dist/*

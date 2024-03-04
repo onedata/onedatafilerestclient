@@ -7,3 +7,4 @@ tmp
 test.py
 onedatafilerestclient-tests-results.xml
 build
+dist
