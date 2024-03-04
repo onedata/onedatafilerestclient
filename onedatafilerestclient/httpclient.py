@@ -22,9 +22,10 @@ class HttpClient:
     timeout: int = 5
     session: requests.Session
 
-    def __init__(self) -> None:
+    def __init__(self, *, verify_ssl: bool = True) -> None:
         """Construct OnedataFileClient instance."""
         self.session = requests.Session()
+        self.session.verify = verify_ssl
 
     def get_session(self) -> requests.Session:
         """Return requests session instance."""
@@ -34,7 +35,9 @@ class HttpClient:
                       method: str,
                       url: str,
                       data: Any = None,
-                      headers: dict[str, str] = {}) -> requests.Response:
+                      headers: dict[str, str] = {},
+                      *,
+                      stream: bool = False) -> requests.Response:
         """Perform an HTTP request."""
         if 'Content-type' not in headers:
             headers['Content-type'] = 'application/json'
@@ -42,8 +45,8 @@ class HttpClient:
         req = requests.Request(method, url, data=data, headers=headers)
         prepared = self.session.prepare_request(req)
         response = self.session.send(prepared,
-                                     timeout=self.timeout,
-                                     verify=False)
+                                     stream=stream,
+                                     timeout=self.timeout)
 
         if not response.ok:
             logging.debug(f"ERROR: {method} {url} '{response.text}'")
@@ -54,9 +57,11 @@ class HttpClient:
     def get(self,
             url: str,
             data: Any = None,
-            headers: dict[str, str] = {}) -> requests.Response:
+            headers: dict[str, str] = {},
+            *,
+            stream: bool = False) -> requests.Response:
         """Perform a GET request."""
-        return self._send_request('GET', url, data, headers)
+        return self._send_request('GET', url, data, headers, stream=stream)
 
     def put(self,
             url: str,

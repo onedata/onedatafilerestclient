@@ -3,12 +3,12 @@
 """Runs integration tests."""
 
 import argparse
+import json
 import os
 import platform
-import sys
 import subprocess
+import sys
 import time
-import json
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 docker_dir = os.path.join('bamboos', 'docker')
@@ -95,7 +95,7 @@ if args.onenv_config is not None:
             subprocess.check_call(['./one-env/onenv', 'wait'])
             environment_ready = True
         except subprocess.CalledProcessError as e:
-            retries =- 1
+            retries -= 1
             time.sleep(5)
             print(f'Waiting for one-env environment setup...')
 

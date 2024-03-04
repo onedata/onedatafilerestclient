@@ -13,7 +13,7 @@ import json
 import random
 import typing
 from functools import lru_cache
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 import requests
 
@@ -34,12 +34,14 @@ class OnedataFileRESTClient:
     def __init__(self,
                  onezone_host: str,
                  token: str,
-                 preferred_oneproviders: list[str] = []):
+                 preferred_oneproviders: list[str] = [],
+                 *,
+                 verify_ssl: bool = True):
         """Construct OnedataFileClient instance."""
         super().__setattr__('onezone_host', onezone_host)
         super().__setattr__('token', token)
-        self.client = HttpClient()
-        self.token_client = HttpClient()
+        self.client = HttpClient(verify_ssl=verify_ssl)
+        self.token_client = HttpClient(verify_ssl=verify_ssl)
         self.preferred_oneproviders = preferred_oneproviders
 
         # lru_cache cannot be used as decorator, as we want to have a separate
@@ -165,11 +167,9 @@ class OnedataFileRESTClient:
         else:
             dir_id = self.get_file_id(space_name, file_path)
 
-        path = f'/data/{dir_id}/children?attribute=size&' \
-               f'attribute=name&attribute=type'
-
-        url = self.op_url(space_name, path)
-        return self.client.get(url).json()
+        url = self.op_url(space_name, f'/data/{dir_id}/children')
+        data = {"attributes": ["name", "size", "type"]}
+        return self.client.get(url, data=data).json()
 
     def list_spaces(self) -> list[str]:
         """List all spaces available for the current token."""
@@ -194,16 +194,31 @@ class OnedataFileRESTClient:
                          file_path: Optional[str] = None,
                          file_id: Optional[str] = None) -> bytes:
         """Read from a file."""
-        if file_id is None:
-            if file_path is None:
-                raise ValueError(
-                    'Both file_path and file_id arguments cannot be None')
-            file_id = self.get_file_id(space_name, file_path)
+        file_id = self._ensure_file_id(space_name, file_path, file_id)
         headers = {'Range': f'bytes={offset}-{offset + size - 1}'}
-        path = f'/data/{file_id}/content'
-        url = self.op_url(space_name, path)
-        result = self.client.get(url, headers=headers).content
-        return result
+        url = self.op_url(space_name, f'/data/{file_id}/content')
+        return self.client.get(url, headers=headers).content
+
+    def iter_file_content(self,
+                          space_name: str,
+                          chunk_size: int,
+                          file_path: Optional[str] = None,
+                          file_id: Optional[str] = None) -> Iterator[bytes]:
+        """Iterate file content."""
+        file_id = self._ensure_file_id(space_name, file_path, file_id)
+        url = self.op_url(space_name, f'/data/{file_id}/content')
+        return self.client.get(url, stream=True).iter_content(chunk_size)
+
+    def _ensure_file_id(self,
+                        space_name: str,
+                        file_path: Optional[str] = None,
+                        file_id: Optional[str] = None) -> str:
+        if file_id is not None:
+            return file_id
+        elif file_path is not None:
+            return self.get_file_id(space_name, file_path)
+        else:
+            raise ValueError('Either file_path or file_id must be specified')
 
     def put_file_content(self, space_name: str, file_id: str,
                          offset: Optional[int], data: bytes) -> None:

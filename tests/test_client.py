@@ -8,35 +8,59 @@ from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 
 import pytest
 
+from requests.exceptions import SSLError
+
 from .common import random_bytes, random_int, random_path, random_str
+
+
+@pytest.fixture
+def client_verifying_ssl(onezone_ip, onezone_admin_token):
+    """Create OnedataFileRESTClient instance."""
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_admin_token,
+                                 verify_ssl=True)
 
 
 @pytest.fixture
 def client(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance."""
-    return OnedataFileRESTClient(onezone_ip, onezone_admin_token)
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_admin_token,
+                                 verify_ssl=False)
 
 
 @pytest.fixture
 def client_ro(onezone_ip, onezone_readonly_token):
     """Create readonly OnedataFileRESTClient instance."""
-    return OnedataFileRESTClient(onezone_ip, onezone_readonly_token)
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_readonly_token,
+                                 verify_ssl=False)
 
 
 @pytest.fixture
 def client_krakow(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
     return OnedataFileRESTClient(
-        onezone_ip, onezone_admin_token,
-        ['dev-oneprovider-krakow.default.svc.cluster.local'])
+        onezone_ip,
+        onezone_admin_token,
+        ['dev-oneprovider-krakow.default.svc.cluster.local'],
+        verify_ssl=False)
 
 
 @pytest.fixture
 def client_ro_krakow(onezone_ip, onezone_readonly_token):
     """Create OnedataFileRESTClient instance bound to 'paris' provider."""
     return OnedataFileRESTClient(
-        onezone_ip, onezone_readonly_token,
-        ['dev-oneprovider-krakow.default.svc.cluster.local'])
+        onezone_ip,
+        onezone_readonly_token,
+        ['dev-oneprovider-krakow.default.svc.cluster.local'],
+        verify_ssl=False)
+
+
+def test_ssl_verification(client_verifying_ssl):
+    """Test 'OnedataFileRESTClient' respects 'verify_ssl' flag."""
+    with pytest.raises(SSLError):
+        assert client_verifying_ssl.list_spaces()
 
 
 def test_list_spaces(client):
@@ -236,3 +260,25 @@ def test_enoent_file(client):
     assert e.error_category == 'posix'
     assert e.error_details == {"errno": "enoent"}
     assert e.description == "Operation failed with POSIX error: enoent."
+
+
+def test_iterating_file_content(client_krakow):
+    """Test 'iter_file_content'."""
+    test_dir = random_path()
+    file_path = os.path.join(test_dir, random_str())
+
+    file_id = client_krakow.create_file('test_onedatarestfs', file_path, 'REG',
+                                        True)
+    file_content = random_bytes(1024)
+    client_krakow.put_file_content('test_onedatarestfs', file_id, 0,
+                                   file_content)
+
+    chunk_size = random_int(4, 100)
+    buff = b''
+    for chunk in client_krakow.iter_file_content('test_onedatarestfs',
+                                                 chunk_size,
+                                                 file_id=file_id):
+        assert len(chunk) <= chunk_size
+        buff += chunk
+
+    assert buff == file_content
