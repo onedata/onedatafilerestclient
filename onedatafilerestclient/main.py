@@ -11,19 +11,51 @@ __license__ = (
 
 import json
 import random
+import time
 import typing
-from functools import lru_cache
-from typing import Any, Dict, Iterator, Optional
+from functools import lru_cache, wraps
+from typing import Any, Callable, Dict, Final, Iterator, NamedTuple, Optional
 
 import requests
 
+import semver  # type: ignore
+
 from . import OnedataRESTError
+from .access_token_scope import AccessTokenScope, SpaceDetails
 from .httpclient import HttpClient
+
+CACHE_SIZE_LIMIT: Final[int] = 512
+BLACKLIST_TIME_LIMIT_NS: Final[int] = 5 * 10**9
+
+
+class Provider(NamedTuple):
+    """Provider relevant attributes."""
+    id: str
+    version: semver.Version
+    domain: str
+
+
+def _retry_on_provider_connection_error(
+        func: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(func)
+    def wrapper(self: OnedataFileRESTClient, space_name: str, *args: Any,
+                **kwargs: Any) -> Any:
+        for provider in self._iter_available_space_providers(space_name):
+            try:
+                return func(self, space_name, *args, **kwargs)
+            # TODO catch only connection exceptions
+            except ValueError:
+                self._blaklist_provider(provider.id)
+
+        raise OnedataRESTError(400, 'posix',
+                               f'No available providers for space {space_name}',
+                               'enoent')  # TODO errno
+
+    return wrapper
 
 
 class OnedataFileRESTClient:
     """Custom REST client for Onedata REST basic file operations API."""
-    timeout: int = 30
     onezone_host: str
     token: str
     preferred_oneproviders: list[str]
@@ -46,11 +78,11 @@ class OnedataFileRESTClient:
 
         # lru_cache cannot be used as decorator, as we want to have a separate
         # cache for each OnedataFileRESTClient instance
-        self.get_provider_for_space = lru_cache(maxsize=512)(
-            self.get_provider_for_space)
         self.get_space_id = lru_cache(maxsize=512)(self.get_space_id)
 
         self.client.get_session().headers.update({'X-Auth-Token': self.token})
+
+        self._init_cache()
 
     def __setattr__(self, name: str, value: str) -> None:
         """Dissalow modification of selected attributes due to caching."""
@@ -75,16 +107,55 @@ class OnedataFileRESTClient:
         """Generate Onezone URL for specific path."""
         return f'https://{self.onezone_host}/api/v3/onezone{path}'
 
+    def get_token_scope(self) -> AccessTokenScope:
+        """Get current token access scope."""
+        url = self.oz_url('/tokens/infer_access_token_scope')
+        caps = self.token_client.post(url, {'token': self.token})
+        return typing.cast(AccessTokenScope, caps.json())
+
+    def list_spaces(self) -> list[str]:
+        """List all spaces available for the current token."""
+        access_token_scope = self.get_token_scope()
+
+        def is_space_supported(s: SpaceDetails) -> bool:
+            return 'supports' in s and bool(s['supports'])
+
+        all_spaces = access_token_scope['dataAccessScope']['spaces']
+
+        # TODO space_name@space_id ?
+        supported_spaces = [
+            space_details['name'] for space_details in all_spaces.values()
+            if is_space_supported(space_details)
+        ]
+
+        return supported_spaces
+
+    def get_space_id(self, space_name: str) -> str:
+        """Get space id by name."""
+        return self._get_space_id(space_name, self.get_token_scope())
+
+    # TODO handle space_name@space_id
+    def _get_space_id(self, space_name: str,
+                      access_token_scope: AccessTokenScope) -> str:
+        """Get space id by name."""
+        spaces = access_token_scope['dataAccessScope']['spaces']
+
+        for space_id, space_details in spaces.items():
+            if space_details['name'] == space_name:
+                space_id
+
+        raise OnedataRESTError(400, 'posix',
+                               f'Space {space_name} doesn\'t exist', 'enoent')
+
+    def get_provider_for_space(self, space_name: str) -> str:
+        """Get Oneprovider domain for a specific space."""
+        provider = next(self._iter_available_space_providers(space_name))
+        return provider.domain
+
     def op_url(self, space_name: str, path: str) -> str:
         """Generate Oneprovider URL for specific path."""
         provider = self.get_provider_for_space(space_name)
         return f'https://{provider}/api/v3/oneprovider{path}'
-
-    def get_token_scope(self) -> Any:
-        """Get current token access scope."""
-        url = self.oz_url('/tokens/infer_access_token_scope')
-        caps = self.token_client.post(url, {'token': self.token})
-        return caps.json()
 
     def get_file_id(self,
                     space_name: str,
@@ -102,37 +173,7 @@ class OnedataFileRESTClient:
                 return self.get_file_id(space_name, file_path, retries - 1)
             raise e
 
-    def get_space_id(self, space_name: str) -> Optional[str]:
-        """Get space id by name."""
-        caps = self.get_token_scope()
-
-        spaces = caps['dataAccessScope']['spaces']
-
-        for space_id in spaces:
-            if spaces[space_id]['name'] == space_name:
-                return typing.cast(str, space_id)
-
-        raise OnedataRESTError(400, 'posix',
-                               f'Space {space_name} doesn\'t exist', 'enoent')
-
-    def get_provider_for_space(self, space_name: str) -> str:
-        """Get Oneprovider domain for a specific space."""
-        space_id = self.get_space_id(space_name)
-        caps = self.get_token_scope()
-        spaces = caps['dataAccessScope']['spaces']
-        providers = caps['dataAccessScope']['providers']
-        provider_ids = spaces[space_id]['supports']
-
-        # Select one of the preferred provider domains if matches
-        for provider in self.preferred_oneproviders:
-            for pid in provider_ids:
-                if providers[pid]['domain'] == provider:
-                    return provider
-
-        # Otherwise, select a provider randomly
-        provider_id = random.choice(list(provider_ids.keys()))
-        return typing.cast(str, providers[provider_id]['domain'])
-
+    @_retry_on_provider_connection_error
     def get_attributes(self,
                        space_name: str,
                        file_path: Optional[str] = None,
@@ -148,6 +189,7 @@ class OnedataFileRESTClient:
         result = self.client.get(url).json()
         return typing.cast(Dict[str, str], result)
 
+    @_retry_on_provider_connection_error
     def set_attributes(self, space_name: str, file_path: str,
                        attributes: Dict[str, str]) -> None:
         """Set file or directory attributes."""
@@ -155,6 +197,7 @@ class OnedataFileRESTClient:
         url = self.op_url(space_name, f'/data/{file_id}')
         self.client.put(url, data=attributes)
 
+    @_retry_on_provider_connection_error
     def readdir(self,
                 space_name: str,
                 file_path: str,
@@ -171,22 +214,7 @@ class OnedataFileRESTClient:
         data = {"attributes": ["name", "size", "type"]}
         return self.client.get(url, data=data).json()
 
-    def list_spaces(self) -> list[str]:
-        """List all spaces available for the current token."""
-        caps = self.get_token_scope()
-
-        def is_space_supported(s: Dict[str, Any]) -> bool:
-            return 'supports' in s and s['supports']
-
-        supported_spaces = []
-        spaces = caps['dataAccessScope']['spaces']
-        for space_id in spaces:
-            space = spaces[space_id]
-            if is_space_supported(space):
-                supported_spaces.append(space['name'])
-
-        return supported_spaces
-
+    @_retry_on_provider_connection_error
     def get_file_content(self,
                          space_name: str,
                          offset: int,
@@ -199,6 +227,7 @@ class OnedataFileRESTClient:
         url = self.op_url(space_name, f'/data/{file_id}/content')
         return self.client.get(url, headers=headers).content
 
+    @_retry_on_provider_connection_error
     def iter_file_content(self,
                           space_name: str,
                           chunk_size: int,
@@ -220,6 +249,7 @@ class OnedataFileRESTClient:
         else:
             raise ValueError('Either file_path or file_id must be specified')
 
+    @_retry_on_provider_connection_error
     def put_file_content(self, space_name: str, file_id: str,
                          offset: Optional[int], data: bytes) -> None:
         """Write to a file."""
@@ -230,6 +260,7 @@ class OnedataFileRESTClient:
         url = self.op_url(space_name, path_url)
         self.client.put(url, data=data, headers=headers)
 
+    @_retry_on_provider_connection_error
     def create_file(self,
                     space_name: str,
                     file_path: str,
@@ -250,12 +281,14 @@ class OnedataFileRESTClient:
         result = self.client.put(url, b'').json()['fileId']
         return typing.cast(str, result)
 
+    @_retry_on_provider_connection_error
     def remove(self, space_name: str, file_path: str) -> None:
         """Remove a file or directory."""
         file_id = self.get_file_id(space_name, file_path)
         path = f'/data/{file_id}'
         self.client.delete(self.op_url(space_name, path))
 
+    @_retry_on_provider_connection_error
     def move(self, src_space_name: str, src_file_path: str, dst_space_name: str,
              dst_file_path: str) -> None:
         """Rename a file or directory."""
@@ -266,9 +299,86 @@ class OnedataFileRESTClient:
             "Content-type": "application/cdmi-object"
         }
 
-        provider = self.get_provider_for_space(dst_space_name)
-        url = f'https://{provider}/cdmi/{dst_space_name}/{dst_file_path}'
+        provider = self._provider_for_space[src_space_name]
+        url = f'https://{provider.domain}/cdmi/{dst_space_name}/{dst_file_path}'
 
         data = {'move': f'{src_space_name}/{src_file_path}'}
 
         self.client.put(url, data=json.dumps(data), headers=headers)
+
+    def _init_cache(self) -> None:
+        self._provider_blacklist: Dict[str, int] = {}
+        self._provider_for_space: Dict[str, Provider] = {}
+
+    def _is_provider_blacklisted(self, provider_id: str) -> bool:
+        if provider_id in self._provider_blacklist:
+            blacklist_time_end = self._provider_blacklist[provider_id]
+            if blacklist_time_end > time.time_ns():
+                True
+            else:
+                del self._provider_blacklist[provider_id]
+                return False
+
+        return False
+
+    def _blaklist_provider(self, provider_id: str) -> None:
+        blacklist_time_end = time.time_ns() + BLACKLIST_TIME_LIMIT_NS
+
+        if len(self._provider_blacklist) >= CACHE_SIZE_LIMIT:
+            self._provider_blacklist = {provider_id: blacklist_time_end}
+        else:
+            self._provider_blacklist[provider_id] = blacklist_time_end
+
+    def _iter_available_space_providers(self,
+                                        space_name: str) -> Iterator[Provider]:
+        if space_name in self._provider_for_space:
+            yield self._provider_for_space[space_name]
+        elif len(self._provider_for_space) >= CACHE_SIZE_LIMIT:
+            # clear cache
+            self._provider_for_space = {}
+
+        for provider in self._list_available_space_providers(space_name):
+            self._provider_for_space[space_name] = provider
+            yield provider
+
+    def _list_available_space_providers(self,
+                                        space_name: str) -> list[Provider]:
+        access_token_scope = self.get_token_scope()
+
+        all_providers = access_token_scope['dataAccessScope']['providers']
+
+        space_id = self._get_space_id(space_name, access_token_scope)
+        space_details = access_token_scope['dataAccessScope']['spaces'][
+            space_id]
+
+        preferred_supporting_providers = []
+        remaining_supporting_providers = []
+
+        for provider_id in space_details['supports']:
+            if self._is_provider_blacklisted(provider_id):
+                continue
+
+            provider_details = all_providers[provider_id]
+            if not provider_details['online']:
+                continue
+
+            provider = Provider(id=provider_id,
+                                version=semver.Version.parse(
+                                    provider_details['version']),
+                                domain=provider_details['domain'])
+
+            try:
+                index = self.preferred_oneproviders.index(provider.domain)
+                preferred_supporting_providers.append((index, provider))
+            except ValueError:
+                remaining_supporting_providers.append(provider)
+
+        preferred_supporting_providers.sort()
+        random.shuffle(remaining_supporting_providers)
+
+        supporting_providers = [
+            provider for _, provider in preferred_supporting_providers
+        ]
+        supporting_providers.extend(remaining_supporting_providers)
+
+        return supporting_providers
