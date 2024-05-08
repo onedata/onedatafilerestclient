@@ -83,28 +83,28 @@ class ProviderSelector:
         """List online and not not blacklisted space providers."""
         access_token_scope = oz_rest_client.infer_token_scope()
 
-        all_providers = access_token_scope['dataAccessScope']['providers']
+        all_providers = access_token_scope["dataAccessScope"]["providers"]
 
         space_id = oz_rest_client.get_space_id(
             space_name, access_token_scope=access_token_scope)
-        space_details = access_token_scope['dataAccessScope']['spaces'][
+        space_details = access_token_scope["dataAccessScope"]["spaces"][
             space_id]
 
         preferred_supporting_providers = []
         remaining_supporting_providers = []
 
-        for provider_id in space_details['supports']:
+        for provider_id in space_details["supports"]:
             if self.is_blacklisted(provider_id):
                 continue
 
             provider_details = all_providers[provider_id]
-            if not provider_details['online']:
+            if not provider_details["online"]:
                 continue
 
-            provider_version = semver.Version.parse(provider_details['version'])
+            provider_version = semver.Version.parse(provider_details["version"])
             provider = Provider(id=provider_id,
                                 version=provider_version,
-                                domain=provider_details['domain'])
+                                domain=provider_details["domain"])
 
             try:
                 index = self.preferred_provider_domains.index(provider.domain)
