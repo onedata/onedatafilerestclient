@@ -9,9 +9,7 @@ import random
 import time
 from typing import Dict, Final, Iterator, List, NamedTuple, Optional
 
-import semver  # type: ignore
-
-from .onezone_rest_client import OnezoneRESTClient, ProviderId
+from .onezone_rest_client import OnezoneRESTClient, ProviderId, SpaceSpecifier
 
 _CACHE_SIZE_LIMIT: Final[int] = 512
 _BLACKLIST_TIME_LIMIT_NS: Final[int] = 5 * 10**9
@@ -20,7 +18,7 @@ _BLACKLIST_TIME_LIMIT_NS: Final[int] = 5 * 10**9
 class Provider(NamedTuple):
     """Provider relevant attributes."""
     id: str
-    version: semver.Version
+    version: str
     domain: str
 
 
@@ -28,8 +26,8 @@ class ProviderSelector:
     """Selector responsible for choosing available provider(s) for space."""
 
     preferred_provider_domains: List[str]
-    _provider_blacklist: Dict[str, int]
-    _provider_for_space: Dict[str, Provider]
+    _provider_blacklist: Dict[ProviderId, int]
+    _provider_for_space: Dict[SpaceSpecifier, Provider]
 
     def __init__(
             self,
@@ -62,23 +60,22 @@ class ProviderSelector:
             self._provider_blacklist[provider_id] = blacklist_time_end
 
     def iter_available_space_providers(
-            self, space_name: str, *,
+            self, space_specifier: SpaceSpecifier, *,
             oz_rest_client: OnezoneRESTClient) -> Iterator[Provider]:
         """Iterate over online and not not blacklisted space providers."""
-        if space_name in self._provider_for_space:
-            yield self._provider_for_space[space_name]
-
+        if space_specifier in self._provider_for_space:
+            yield self._provider_for_space[space_specifier]
         if len(self._provider_for_space) > _CACHE_SIZE_LIMIT:
             # clear cache
             self._provider_for_space = {}
 
         for provider in self.list_available_space_providers(
-                space_name, oz_rest_client=oz_rest_client):
-            self._provider_for_space[space_name] = provider
+                space_specifier, oz_rest_client=oz_rest_client):
+            self._provider_for_space[space_specifier] = provider
             yield provider
 
     def list_available_space_providers(
-            self, space_name: str, *,
+            self, space_specifier: SpaceSpecifier, *,
             oz_rest_client: OnezoneRESTClient) -> List[Provider]:
         """List online and not not blacklisted space providers."""
         access_token_scope = oz_rest_client.infer_token_scope()
@@ -86,7 +83,7 @@ class ProviderSelector:
         all_providers = access_token_scope["dataAccessScope"]["providers"]
 
         space_id = oz_rest_client.get_space_id(
-            space_name, access_token_scope=access_token_scope)
+            space_specifier, access_token_scope=access_token_scope)
         space_details = access_token_scope["dataAccessScope"]["spaces"][
             space_id]
 
@@ -101,9 +98,8 @@ class ProviderSelector:
             if not provider_details["online"]:
                 continue
 
-            provider_version = semver.Version.parse(provider_details["version"])
             provider = Provider(id=provider_id,
-                                version=provider_version,
+                                version=provider_details["version"],
                                 domain=provider_details["domain"])
 
             try:
