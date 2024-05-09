@@ -9,7 +9,6 @@ __license__ = (
 
 import sys
 import typing
-from functools import lru_cache
 from typing import Dict, List, Optional, Tuple, Union
 
 if sys.version_info < (3, 11):
@@ -28,6 +27,8 @@ SpaceFQN: TypeAlias = str
 """
 Fully qualified space name in the form: <SpaceName>@<SpaceId>
 """
+
+SpaceSpecifier: TypeAlias = Union[SpaceName, SpaceFQN]
 
 
 class SpaceSupportAttributes(TypedDict):
@@ -89,20 +90,19 @@ class AccessTokenScope(TypedDict):
 
 class OnezoneRESTClient:
     """Custom REST client for Onezone REST basic operations API."""
+    _cache_size_limit: int = 512
+
     _host: str
     _token: str
-    _client: HttpClient
+    _http_client: HttpClient
+    _space_specifier_to_id: Dict[SpaceSpecifier, SpaceId]
 
     def __init__(self, host: str, token: str, *, verify_ssl: bool = True):
         """Construct OnezoneRESTClient instance."""
         self._host = host
         self._token = token
-        self._client = HttpClient(verify_ssl=verify_ssl)
-
-        # TODO
-        # lru_cache cannot be used as decorator, as we want to have a separate
-        # cache for each OnezoneRESTClient instance
-        self.get_space_id = lru_cache(maxsize=512)(self.get_space_id)
+        self._http_client = HttpClient(verify_ssl=verify_ssl)
+        self._space_specifier_to_id = {}
 
     def __eq__(self, other: object) -> bool:
         """Compare 2 instances of OnezoneRESTClient."""
@@ -125,21 +125,17 @@ class OnezoneRESTClient:
     def infer_token_scope(self) -> AccessTokenScope:
         """Get current token access scope."""
         url = self.build_url("/tokens/infer_access_token_scope")
-        result = self._client.post(url, {"token": self._token})
+        result = self._http_client.post(url, {"token": self._token})
         return typing.cast(AccessTokenScope, result.json())
 
-    def list_spaces(self) -> List[str]:
+    def list_spaces(self) -> List[SpaceFQN]:
         """List all spaces available for the current token."""
         access_token_scope = self.infer_token_scope()
-
-        def is_space_supported(s: SpaceDetails) -> bool:
-            return "supports" in s and bool(s["supports"])
-
         all_spaces = access_token_scope["dataAccessScope"]["spaces"]
 
-        # TODO space_name@space_id ?
         supported_spaces = [
-            space_details["name"] for space_details in all_spaces.values()
+            f'{space_details["name"]}@{space_id}'
+            for space_id, space_details in all_spaces.items()
             if is_space_supported(space_details)
         ]
 
@@ -147,12 +143,18 @@ class OnezoneRESTClient:
 
     def get_space_id(
             self,
-            space_name: Union[SpaceName, SpaceFQN],
+            space_specifier: SpaceSpecifier,
             *,
             access_token_scope: Optional[AccessTokenScope] = None) -> SpaceId:
-        """Get space id by name."""
-        if is_fully_qualified_space_name(space_name):
-            _, space_id = unpack_fully_qualified_space_name(space_name)
+        """Get space id by specifier."""
+        space_id = self._space_specifier_to_id.get(space_specifier)
+        if space_id:
+            return space_id
+        if len(self._space_specifier_to_id) > self._cache_size_limit:
+            self._space_specifier_to_id = {}
+
+        if is_fully_qualified_space_name(space_specifier):
+            _, space_id = unpack_fully_qualified_space_name(space_specifier)
             return space_id
 
         if not access_token_scope:
@@ -161,19 +163,19 @@ class OnezoneRESTClient:
         all_spaces = access_token_scope["dataAccessScope"]["spaces"]
 
         for space_id, space_details in all_spaces.items():
-            if space_details["name"] == space_name:
+            if space_details["name"] == space_specifier:
                 return space_id
 
         raise OnedataRESTError(
             http_code=400,
             error_category="posix",
-            error_details=f"Space {space_name} does not exist",
+            error_details=f"Space {space_specifier} does not exist",
             description="enoent")
 
 
-def is_fully_qualified_space_name(space_name: str) -> bool:
-    """Check if given space name if fully qualified."""
-    return "@" in space_name
+def is_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:
+    """Check if given space specifier if fully qualified."""
+    return "@" in space_specifier
 
 
 def unpack_fully_qualified_space_name(
@@ -181,3 +183,8 @@ def unpack_fully_qualified_space_name(
     """Infer space name and id from fully qualified space name."""
     space_name, space_id = space_fqn.split("@")
     return space_name, space_id
+
+
+def is_space_supported(space_details: SpaceDetails) -> bool:
+    """Check if space is supported."""
+    return "supports" in space_details and bool(space_details["supports"])
