@@ -5,9 +5,10 @@ __copyright__ = "Copyright (C) 2024 ACK CYFRONET AGH"
 __license__ = (
     "This software is released under the MIT license cited in LICENSE.txt")
 
-import random
 import time
 from typing import Dict, Final, Iterator, List, NamedTuple, Optional
+
+from packaging.version import Version, parse  # type: ignore
 
 from .onezone_rest_client import OnezoneRESTClient, ProviderId, SpaceSpecifier
 
@@ -18,7 +19,7 @@ _BLACKLIST_TIME_LIMIT_NS: Final[int] = 5 * 10**9
 class Provider(NamedTuple):
     """Provider relevant attributes."""
     id: str
-    version: str
+    version: Version
     domain: str
 
 
@@ -99,7 +100,7 @@ class ProviderSelector:
                 continue
 
             provider = Provider(id=provider_id,
-                                version=provider_details["version"],
+                                version=parse(provider_details["version"]),
                                 domain=provider_details["domain"])
 
             try:
@@ -113,7 +114,7 @@ class ProviderSelector:
             provider for _, provider in preferred_supporting_providers
         ]
 
-        random.shuffle(remaining_supporting_providers)
+        remaining_supporting_providers.sort(key=lambda x: x.version, reverse=True)
         supporting_providers.extend(remaining_supporting_providers)
 
         return supporting_providers

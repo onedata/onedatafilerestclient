@@ -8,4 +8,4 @@ pytest
 six
 pyyaml
 typing-extensions==4.3.0
-semver>=3,<4
+packaging

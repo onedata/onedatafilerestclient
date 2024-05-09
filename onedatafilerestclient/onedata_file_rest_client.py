@@ -15,6 +15,8 @@ import typing
 from functools import wraps
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
+from packaging.version import Version  # type: ignore
+
 import requests
 
 if sys.version_info < (3, 11):
@@ -206,7 +208,7 @@ class OnedataFileRESTClient:
         if continuation_token is not None:
             qs += f"&token={continuation_token}"
 
-        if provider.version < "21.02.5":  # TODO
+        if provider.version < Version("21.02.5"):
             qs += "&attribute=name&attribute=type"
             data = None
         else:

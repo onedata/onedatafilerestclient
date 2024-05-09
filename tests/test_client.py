@@ -165,7 +165,7 @@ def test_set_attributes(client: OnedataFileRESTClient):
     file_attrs = client.get_attributes(space_specifier, **file_selector)
     assert file_attrs["mode"] == "775"
 
-    client.set_attributes(space_specifier, {"mode": "553"},  **file_selector)
+    client.set_attributes(space_specifier, {"mode": "553"}, **file_selector)
     file_attrs = client.get_attributes(space_specifier, **file_selector)
 
     assert file_attrs["mode"] == "553"
