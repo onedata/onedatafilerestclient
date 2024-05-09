@@ -10,34 +10,78 @@ __license__ = (
     "This software is released under the MIT license cited in LICENSE.txt")
 
 import json
+import sys
 import typing
 from functools import wraps
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import requests
 
+if sys.version_info < (3, 11):
+    from typing_extensions import NotRequired, TypeAlias, TypedDict
+else:
+    from typing import NotRequired, TypeAlias, TypedDict
+
 from . import OnedataRESTError
 from .httpclient import HttpClient
-from .onezone_rest_client import AccessTokenScope, OnezoneRESTClient, SpaceId
-from .provider_selector import ProviderSelector
+from .onezone_rest_client import (AccessTokenScope, OnezoneRESTClient, SpaceFQN,
+                                  SpaceId, SpaceName, SpaceSpecifier)
+from .provider_selector import Provider, ProviderSelector
+
+FileId: TypeAlias = str
+FilePath: TypeAlias = str
+"""
+File path relative to space, that is without space specifier prefix.
+"""
 
 
-def _retry_on_provider_connection_error(
-        func: Callable[..., Any]) -> Callable[..., Any]:
+class ChildAttrs(TypedDict):
+    """Directory child basic attributes."""
+
+    name: str
+    type: str
+    file_id: NotRequired[FileId]
+    fileId: NotRequired[FileId]
+
+
+class ListChildrenResult(TypedDict):
+    """Directory listing result.
+
+    Refer to the API specification for more information:
+    https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/list_children
+    """
+
+    children: List[ChildAttrs]
+    isLast: bool
+    nextPageToken: Optional[str]
+
+
+def _find_available_provider(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
-    def wrapper(self: OnedataFileRESTClient, space_name: str, *args: Any,
-                **kwargs: Any) -> Any:
+    def wrapper(self: OnedataFileRESTClient, space_specifier: SpaceSpecifier,
+                *args: Any, provider: Optional[Provider], **kwargs: Any) -> Any:
+        if provider is not None:
+            return func(self,
+                        space_specifier,
+                        *args,
+                        provider=provider,
+                        **kwargs)
+
         for provider in self._provider_selector.iter_available_space_providers(
-                space_name, oz_rest_client=self._oz_client):
+                space_specifier, oz_rest_client=self._oz_client):
             try:
-                return func(self, space_name, *args, **kwargs)
+                return func(self,
+                            space_specifier,
+                            *args,
+                            provider=provider,
+                            **kwargs)
             except requests.exceptions.ConnectionError:
                 self._provider_selector.blacklist(provider.id)
 
         raise OnedataRESTError(
             http_code=400,
             error_category="posix",
-            error_details=f"No available providers for space {space_name}",
+            error_details=f"No available provider for space {space_specifier}",
             description="eagain")
 
     return wrapper
@@ -48,7 +92,7 @@ class OnedataFileRESTClient:
 
     _oz_client: OnezoneRESTClient
     _provider_selector: ProviderSelector
-    _client: HttpClient
+    _op_client: HttpClient
 
     def __init__(self,
                  onezone_host: str,
@@ -63,8 +107,8 @@ class OnedataFileRESTClient:
         self._provider_selector = ProviderSelector(
             preferred_provider_domains=preferred_provider_domains)
 
-        self._client = HttpClient(verify_ssl=verify_ssl)
-        self._client.get_session().headers.update({"X-Auth-Token": token})
+        self._op_client = HttpClient(verify_ssl=verify_ssl)
+        self._op_client.get_session().headers.update({"X-Auth-Token": token})
 
     def __eq__(self, other: object) -> bool:
         """Compare 2 instances of OnedataFileRESTClient."""
@@ -77,146 +121,180 @@ class OnedataFileRESTClient:
         """Calculate a hash of a given instance of OnedataFileRESTClient."""
         return hash(self._oz_client)
 
-    def build_oz_url(self, path: str) -> str:
-        """Generate Onezone URL for specific path."""
-        return self._oz_client.build_url(path)
-
     def get_token_scope(self) -> AccessTokenScope:
         """Get current token access scope."""
         return self._oz_client.infer_token_scope()
 
-    def list_spaces(self) -> List[str]:
+    def list_spaces(self) -> List[SpaceFQN]:
         """List all spaces available for the current token."""
         return self._oz_client.list_spaces()
 
-    def get_space_id(self, space_name: str) -> SpaceId:
-        """Get space id by name."""
-        return self._oz_client.get_space_id(space_name)
+    def get_space_id(self, space_specifier: SpaceSpecifier) -> SpaceId:
+        """Get space id by specifier."""
+        return self._oz_client.get_space_id(space_specifier)
 
-    def get_provider_domain_for_space(self, space_name: str) -> str:
-        """Get Oneprovider domain for a specific space."""
-        provider = next(
-            self._provider_selector.iter_available_space_providers(
-                space_name, oz_rest_client=self._oz_client))
-        return provider.domain
-
-    def build_op_url(self, space_name: str, path: str) -> str:
-        """Generate Oneprovider URL for specific path."""
-        provider = self.get_provider_domain_for_space(space_name)
-        return f"https://{provider}/api/v3/oneprovider{path}"
-
+    @_find_available_provider
     def get_file_id(self,
-                    space_name: str,
-                    file_path: str,
-                    retries: int = 3) -> str:
-        """Get Onedata file id based on space name and path."""
-        try:
-            path = f"/lookup-file-id/{space_name}/{file_path}"
-            return typing.cast(
-                str,
-                self._client.post(self.build_op_url(space_name,
-                                                    path)).json()["fileId"])
-        except requests.exceptions.ReadTimeout as e:
-            if retries > 0:
-                return self.get_file_id(space_name, file_path, retries - 1)
-            raise e
+                    space_specifier: SpaceSpecifier,
+                    file_path: FilePath,
+                    *,
+                    retries: int = 3,
+                    provider: Optional[Provider] = None) -> FileId:
+        """Get Onedata file id based on space specifier and file path."""
+        provider = self._ensure_provider(space_specifier, provider)
+        path = f"/lookup-file-id/{space_specifier}/{file_path}"
+        url = self._build_op_url(provider, path)
 
-    @_retry_on_provider_connection_error
-    def get_attributes(self,
-                       space_name: str,
-                       file_path: Optional[str] = None,
-                       file_id: Optional[str] = None) -> Dict[str, str]:
+        while True:
+            try:
+                file_id = self._op_client.post(url).json()["fileId"]
+                return typing.cast(FileId, file_id)
+            except requests.exceptions.ReadTimeout as e:
+                if retries <= 0:
+                    raise e
+
+                retries -= 1
+
+    @_find_available_provider
+    def get_attributes(
+            self,
+            space_specifier: SpaceSpecifier,
+            *,
+            file_path: Optional[FilePath] = None,
+            file_id: Optional[FileId] = None,
+            provider: Optional[Provider] = None
+    ) -> Dict[str, Any]:  # TODO type?
         """Get file or directory attributes."""
-        if file_id is None:
-            if file_path is None:
-                file_id = self.get_space_id(space_name)
-            else:
-                file_id = self.get_file_id(space_name, file_path)
+        provider = self._ensure_provider(space_specifier, provider)
+        file_id = self._resolve_file_id(space_specifier,
+                                        file_path=file_path,
+                                        file_id=file_id,
+                                        provider=provider)
+        url = self._build_op_url(provider, f"/data/{file_id}")
+        attrs = self._op_client.get(url).json()
 
-        url = self.build_op_url(space_name, f"/data/{file_id}")
-        result = self._client.get(url).json()
-        return typing.cast(Dict[str, str], result)
+        return typing.cast(Dict[str, Any], attrs)
 
-    @_retry_on_provider_connection_error
-    def set_attributes(self, space_name: str, file_path: str,
-                       attributes: Dict[str, str]) -> None:
+    @_find_available_provider
+    def set_attributes(self,
+                       space_specifier: SpaceSpecifier,
+                       attributes: Dict[str, str],
+                       *,
+                       file_path: Optional[FilePath] = None,
+                       file_id: Optional[FileId] = None,
+                       provider: Optional[Provider] = None) -> None:
         """Set file or directory attributes."""
-        file_id = self.get_file_id(space_name, file_path)
-        url = self.build_op_url(space_name, f"/data/{file_id}")
-        self._client.put(url, data=attributes)
+        provider = self._ensure_provider(space_specifier, provider)
+        file_id = self._resolve_file_id(space_specifier,
+                                        file_path=file_path,
+                                        file_id=file_id,
+                                        provider=provider)
+        url = self._build_op_url(provider, f"/data/{file_id}")
+        self._op_client.put(url, data=attributes)
 
-    @_retry_on_provider_connection_error
-    def readdir(self,
-                space_name: str,
-                file_path: str,
-                limit: int = 1000,
-                continuation_token: Optional[str] = None) -> Any:
+    @_find_available_provider
+    def list_children(
+            self,
+            space_specifier: SpaceSpecifier,
+            *,
+            limit: int = 1000,
+            continuation_token: Optional[str] = None,
+            file_path: Optional[FilePath] = None,
+            file_id: Optional[FileId] = None,
+            provider: Optional[Provider] = None) -> ListChildrenResult:
         """List contents of a directory."""
-        if file_path is None:
-            # We're listing space contents
-            dir_id = self.get_space_id(space_name)
+        provider = self._ensure_provider(space_specifier, provider)
+        dir_file_id = self._resolve_file_id(space_specifier,
+                                            file_path=file_path,
+                                            file_id=file_id,
+                                            provider=provider)
+        qs = f"?limit={limit}"
+        if continuation_token is not None:
+            qs += f"&token={continuation_token}"
+
+        if provider.version < "25":  # TODO
+            qs += "attribute=name&attribute=type"
+            data = None
         else:
-            dir_id = self.get_file_id(space_name, file_path)
+            data = {"attributes": ["name", "type"]}
 
-        url = self.build_op_url(space_name, f"/data/{dir_id}/children")
-        data = {"attributes": ["name", "size", "type"]}
-        return self._client.get(url, data=data).json()
+        url = self._build_op_url(provider, f"/data/{dir_file_id}/children{qs}")
+        result = self._op_client.get(url, data=data).json()
+        return typing.cast(ListChildrenResult, result)
 
-    @_retry_on_provider_connection_error
+    @_find_available_provider
     def get_file_content(self,
-                         space_name: str,
-                         offset: int,
-                         size: int,
-                         file_path: Optional[str] = None,
-                         file_id: Optional[str] = None) -> bytes:
+                         space_specifier: SpaceSpecifier,
+                         *,
+                         offset: int = 0,
+                         size: Optional[int] = None,
+                         file_path: Optional[FilePath] = None,
+                         file_id: Optional[FileId] = None,
+                         provider: Optional[Provider] = None) -> bytes:
         """Read from a file."""
-        file_id = self._ensure_file_id(space_name, file_path, file_id)
-        headers = {"Range": f"bytes={offset}-{offset + size - 1}"}
-        url = self.build_op_url(space_name, f"/data/{file_id}/content")
-        return self._client.get(url, headers=headers).content
-
-    @_retry_on_provider_connection_error
-    def iter_file_content(self,
-                          space_name: str,
-                          chunk_size: int,
-                          file_path: Optional[str] = None,
-                          file_id: Optional[str] = None) -> Iterator[bytes]:
-        """Iterate file content."""
-        file_id = self._ensure_file_id(space_name, file_path, file_id)
-        url = self.build_op_url(space_name, f"/data/{file_id}/content")
-        return self._client.get(url, stream=True).iter_content(chunk_size)
-
-    def _ensure_file_id(self,
-                        space_name: str,
-                        file_path: Optional[str] = None,
-                        file_id: Optional[str] = None) -> str:
-        if file_id is not None:
-            return file_id
-        elif file_path is not None:
-            return self.get_file_id(space_name, file_path)
+        provider = self._ensure_provider(space_specifier, provider)
+        file_id = self._resolve_file_id(space_specifier,
+                                        file_path=file_path,
+                                        file_id=file_id,
+                                        provider=provider)
+        if size is not None:
+            headers = {"Range": f"bytes={offset}-{offset + size - 1}"}
         else:
-            raise ValueError("Either file_path or file_id must be specified")
+            headers = {}
 
-    @_retry_on_provider_connection_error
-    def put_file_content(self, space_name: str, file_id: str,
-                         offset: Optional[int], data: bytes) -> None:
+        url = self._build_op_url(provider, f"/data/{file_id}/content")
+        return self._op_client.get(url, headers=headers).content
+
+    @_find_available_provider
+    def iter_file_content(
+            self,
+            space_specifier: SpaceSpecifier,
+            chunk_size: int,
+            *,
+            file_path: Optional[FilePath] = None,
+            file_id: Optional[FileId] = None,
+            provider: Optional[Provider] = None) -> Iterator[bytes]:
+        """Iterate file content."""
+        provider = self._ensure_provider(space_specifier, provider)
+        file_id = self._resolve_file_id(space_specifier,
+                                        file_path=file_path,
+                                        file_id=file_id,
+                                        provider=provider)
+        url = self._build_op_url(provider, f"/data/{file_id}/content")
+        return self._op_client.get(url, stream=True).iter_content(chunk_size)
+
+    @_find_available_provider
+    def put_file_content(self,
+                         space_specifier: SpaceSpecifier,
+                         data: bytes,
+                         *,
+                         offset: Optional[int] = None,
+                         file_path: Optional[FilePath] = None,
+                         file_id: Optional[FileId] = None,
+                         provider: Optional[Provider] = None) -> None:
         """Write to a file."""
+        provider = self._ensure_provider(space_specifier, provider)
+        file_id = self._resolve_file_id(space_specifier,
+                                        file_path=file_path,
+                                        file_id=file_id,
+                                        provider=provider)
         headers = {"Content-type": "application/octet-stream"}
-        path_url = f"/data/{file_id}/content"
-        if offset is not None:
-            path_url += f"?offset={offset}"
-        url = self.build_op_url(space_name, path_url)
-        self._client.put(url, data=data, headers=headers)
+        qs = f"?offset={offset}" if offset is not None else ""
+        url = self._build_op_url(provider, f"/data/{file_id}/content{qs}")
+        self._op_client.put(url, data=data, headers=headers)
 
-    @_retry_on_provider_connection_error
+    @_find_available_provider
     def create_file(self,
-                    space_name: str,
+                    space_specifier: str,
                     file_path: str,
+                    *,
                     file_type: str = "REG",
                     create_parents: bool = False,
-                    mode: Optional[int] = None) -> str:
+                    mode: Optional[int] = None,
+                    provider: Optional[Provider] = None) -> FileId:
         """Create a file at path."""
-        space_id = self.get_space_id(space_name)
+        provider = self._ensure_provider(space_specifier, provider)
+        space_id = self.get_space_id(space_specifier)
         parents = str(create_parents).lower()
 
         path = f"/data/{space_id}/path/{file_path}"
@@ -225,31 +303,81 @@ class OnedataFileRESTClient:
         if mode:
             path += f"&mode={oct(mode)}"
 
-        url = self.build_op_url(space_name, path)
-        result = self._client.put(url, b"").json()["fileId"]
-        return typing.cast(str, result)
+        url = self._build_op_url(provider, path)
+        result = self._op_client.put(url, b"").json()["fileId"]
+        return typing.cast(FileId, result)
 
-    @_retry_on_provider_connection_error
-    def remove(self, space_name: str, file_path: str) -> None:
+    @_find_available_provider
+    def remove(self,
+               space_specifier: SpaceSpecifier,
+               *,
+               file_path: Optional[FilePath] = None,
+               file_id: Optional[FileId] = None,
+               provider: Optional[Provider] = None) -> None:
         """Remove a file or directory."""
-        file_id = self.get_file_id(space_name, file_path)
-        path = f"/data/{file_id}"
-        self._client.delete(self.build_op_url(space_name, path))
+        provider = self._ensure_provider(space_specifier, provider)
+        file_id = self._resolve_file_id(space_specifier,
+                                        file_path=file_path,
+                                        file_id=file_id,
+                                        provider=provider)
+        url = self._build_op_url(provider, f"/data/{file_id}")
+        self._op_client.delete(url)
 
-    @_retry_on_provider_connection_error
-    def move(self, src_space_name: str, src_file_path: str, dst_space_name: str,
-             dst_file_path: str) -> None:
+    @_find_available_provider
+    def move(self,
+             src_space_name: SpaceName,
+             src_file_path: FilePath,
+             dst_space_name: SpaceName,
+             dst_file_path: FilePath,
+             *,
+             provider: Optional[Provider] = None) -> None:
         """Rename a file or directory."""
         # First create the target directory (this assumes that the src_file_path
         # already exists)
+        provider = self._ensure_provider(src_space_name, provider)
         headers = {
             "X-CDMI-Specification-Version": "1.1.1",
             "Content-type": "application/cdmi-object"
         }
-
-        provider_domain = self.get_provider_domain_for_space(src_space_name)
-        url = f"https://{provider_domain}/cdmi/{dst_space_name}/{dst_file_path}"
+        url = f"https://{provider.domain}/cdmi/{dst_space_name}/{dst_file_path}"
 
         data = {"move": f"{src_space_name}/{src_file_path}"}
 
-        self._client.put(url, data=json.dumps(data), headers=headers)
+        self._op_client.put(url, data=json.dumps(data), headers=headers)
+
+    def _ensure_provider(self, space_specifier: SpaceSpecifier,
+                         provider: Optional[Provider]) -> Provider:
+        if provider is None:
+            provider = self._select_provider_for_space(space_specifier)
+
+        return provider
+
+    def _select_provider_for_space(self,
+                                   space_specifier: SpaceSpecifier) -> Provider:
+        return next(
+            self._provider_selector.iter_available_space_providers(
+                space_specifier, oz_rest_client=self._oz_client))
+
+    def _resolve_file_id(self,
+                         space_specifier: SpaceSpecifier,
+                         *,
+                         file_path: Optional[FilePath] = None,
+                         file_id: Optional[FileId] = None,
+                         provider: Provider) -> FileId:
+        if file_id is not None:
+            return file_id
+
+        if file_path is not None:
+            file_id = self.get_file_id(space_specifier,
+                                       file_path,
+                                       provider=provider)
+            return typing.cast(FileId, file_id)
+
+        return self.get_space_id(space_specifier)
+
+    @staticmethod
+    def _build_op_url(provider: Provider, path: str) -> str:
+        if not path.startswith("/"):
+            path = "/" + path
+
+        return f"https://{provider.domain}/api/v3/oneprovider{path}"
