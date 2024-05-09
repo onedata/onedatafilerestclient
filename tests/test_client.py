@@ -2,7 +2,7 @@
 """Test OnedataFileRESTClient methods."""
 
 import os
-import time
+import random
 
 from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 
@@ -11,6 +11,15 @@ import pytest
 from requests.exceptions import SSLError
 
 from .common import random_bytes, random_int, random_path, random_str
+
+PROVIDER_KRK_NAME = "dev-oneprovider-krakow"
+PROVIDER_KRK_DOMAIN = "dev-oneprovider-krakow.default.svc.cluster.local"
+PROVIDER_PAR_NAME = "dev-oneprovider-paris"
+PROVIDER_PAR_DOMAIN = "dev-oneprovider-paris.default.svc.cluster.local"
+
+SPACE_KRK_PAR_NAME = "space_krk_par"
+SPACE_PAR_NAME = "space_par"
+SPACE_NO_SUPPORT_NAME = "space_nosupport"
 
 
 @pytest.fixture
@@ -43,242 +52,388 @@ def client_krakow(onezone_ip, onezone_admin_token):
     return OnedataFileRESTClient(
         onezone_ip,
         onezone_admin_token,
-        ['dev-oneprovider-krakow.default.svc.cluster.local'],
+        ["dev-oneprovider-krakow.default.svc.cluster.local"],
         verify_ssl=False)
 
 
 @pytest.fixture
 def client_ro_krakow(onezone_ip, onezone_readonly_token):
-    """Create OnedataFileRESTClient instance bound to 'paris' provider."""
+    """Create readonly OnedataFileRESTClient instance bound to 'krakow'."""
     return OnedataFileRESTClient(
         onezone_ip,
         onezone_readonly_token,
-        ['dev-oneprovider-krakow.default.svc.cluster.local'],
+        ["dev-oneprovider-krakow.default.svc.cluster.local"],
         verify_ssl=False)
 
 
-def test_ssl_verification(client_verifying_ssl):
+@pytest.fixture
+def client_paris(onezone_ip, onezone_admin_token):
+    """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
+    return OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        ["dev-oneprovider-paris.default.svc.cluster.local"],
+        verify_ssl=False)
+
+
+def test_ssl_verification(client_verifying_ssl: OnedataFileRESTClient):
     """Test 'OnedataFileRESTClient' respects 'verify_ssl' flag."""
     with pytest.raises(SSLError):
         assert client_verifying_ssl.list_spaces()
 
 
-def test_list_spaces(client):
+def test_list_spaces(client: OnedataFileRESTClient):
     """Test 'list_spaces' method."""
-    spaces = client.list_spaces()
+    exp_spaces = sorted([
+        _get_space_fqn(SPACE_KRK_PAR_NAME, client),
+        _get_space_fqn(SPACE_PAR_NAME, client)
+    ])
 
-    assert 'test_onedatarestfs' in spaces
-
-
-def test_unsupported_space(client):
-    """Test handling of an unsupported space."""
-    spaces = client.list_spaces()
-
-    assert 'test_onedatarestfs_nosupport' not in spaces
+    assert exp_spaces == sorted(client.list_spaces())
 
 
-def test_create_file(client):
-    """Test 'create_file' method."""
+def test_get_space_id(client: OnedataFileRESTClient):
+    """Test 'get_space_id' method."""
+    space_id = client.get_space_id(SPACE_KRK_PAR_NAME)
+    space_fqn = f"{SPACE_KRK_PAR_NAME}@{space_id}"
+
+    assert client.get_space_id(space_fqn) == space_id
+
+
+def test_get_provider_domain_for_space(client_krakow: OnedataFileRESTClient,
+                                       client_ro_krakow: OnedataFileRESTClient,
+                                       client_paris: OnedataFileRESTClient):
+    """Test 'get_provider_domain_for_space' method."""
+    assert client_krakow._select_provider_for_space(
+        SPACE_KRK_PAR_NAME).domain == PROVIDER_KRK_DOMAIN
+
+    assert client_ro_krakow._select_provider_for_space(
+        SPACE_KRK_PAR_NAME).domain == PROVIDER_KRK_DOMAIN
+
+    assert client_paris._select_provider_for_space(
+        SPACE_KRK_PAR_NAME).domain == PROVIDER_PAR_DOMAIN
+
+
+def test_get_file_id(client: OnedataFileRESTClient):
+    """Test 'get_file_id' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
     file_path = random_path()
-    file_id = client.create_file('test_onedatarestfs', file_path, 'REG', True)
-    file_content = random_bytes(1024)
+    file_id = client.create_file(space_specifier,
+                                 file_path,
+                                 create_parents=True)
 
-    client.put_file_content('test_onedatarestfs', file_id, 0, file_content)
-
-    content = client.get_file_content('test_onedatarestfs',
-                                      0,
-                                      len(file_content),
-                                      file_id=file_id)
-
-    assert (content == file_content)
+    assert file_id == client.get_file_id(space_specifier, file_path)
 
 
-def test_create_and_list_files(client):
-    """Test 'readdir' method."""
-    file_count = 24
+def test_get_attributes_for_space_dir(client: OnedataFileRESTClient):
+    """Test 'get_attributes' method for space directory."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+    space_attrs = client.get_attributes(space_specifier)
 
-    test_dir = random_path()
-
-    files = [
-        os.path.join(test_dir, random_str(random_int(lower_bound=10)))
-        for _ in range(file_count)
-    ]
-
-    for f in files:
-        client.create_file('test_onedatarestfs', f, 'REG', True)
-
-    res = client.readdir('test_onedatarestfs', test_dir)
-
-    assert 'children' in res
-    assert len(res['children']) == file_count
+    assert SPACE_KRK_PAR_NAME == space_attrs["name"]
 
 
-def test_delete_file(client):
-    """Test 'remove' method."""
-    test_dir = random_path()
-    file_path = os.path.join(test_dir, random_str())
-    client.create_file('test_onedatarestfs', file_path, 'REG', True)
+def test_get_attributes_for_file(client: OnedataFileRESTClient):
+    """Test 'get_attributes' method for space directory."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
-    res = client.readdir('test_onedatarestfs', test_dir)
+    file_path = random_path()
+    file_name = file_path.split("/")[-1]
+    file_id = client.create_file(space_specifier,
+                                 file_path,
+                                 create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
 
-    assert len(res['children']) == 1
+    file_attrs = client.get_attributes(space_specifier, **file_selector)
 
-    client.remove('test_onedatarestfs', file_path)
-
-    res = client.readdir('test_onedatarestfs', test_dir)
-
-    assert len(res['children']) == 0
-
-
-def test_rename_file(client):
-    """Test 'move' method."""
-    test_dir = random_path()
-    file_path = os.path.join(test_dir, random_str())
-
-    target_test_dir = random_path()
-    target_file_path = os.path.join(target_test_dir, random_str())
-
-    client.create_file('test_onedatarestfs', file_path, 'REG', True)
-
-    res = client.readdir('test_onedatarestfs', test_dir)
-
-    assert len(res['children']) == 1
-
-    client.create_file('test_onedatarestfs', target_test_dir, 'DIR', True)
-
-    client.move('test_onedatarestfs', file_path, 'test_onedatarestfs',
-                target_file_path)
-
-    res = client.readdir('test_onedatarestfs', test_dir)
-
-    assert len(res['children']) == 0
-
-    res = client.readdir('test_onedatarestfs', target_test_dir)
-
-    assert len(res['children']) == 1
+    assert file_name == file_attrs["name"]
+    assert file_id == file_attrs["fileId"]
 
 
-def test_readonly_token_read_same_provider(client_krakow, client_ro_krakow):
-    """Test 'get_file_content' method using readonly token."""
-    test_dir = random_path()
-    file_path = os.path.join(test_dir, random_str())
+def test_set_attributes(client: OnedataFileRESTClient):
+    """Test 'set_attributes' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
-    file_id = client_krakow.create_file('test_onedatarestfs', file_path, 'REG',
-                                        True)
-    file_content = random_bytes(1024)
-    client_krakow.put_file_content('test_onedatarestfs', file_id, 0,
-                                   file_content)
+    file_path = random_path()
+    file_id = client.create_file(space_specifier,
+                                 file_path,
+                                 mode=0o775,
+                                 create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
 
-    assert client_krakow.get_provider_for_space(
-        'test_onedatarestfs') == client_ro_krakow.get_provider_for_space(
-            'test_onedatarestfs')
+    file_attrs = client.get_attributes(space_specifier, **file_selector)
+    assert file_attrs["mode"] == "775"
 
-    assert client_ro_krakow.get_file_content('test_onedatarestfs',
-                                             0,
-                                             1024,
-                                             file_id=file_id) == file_content
+    client.set_attributes(space_specifier, {"mode": "553"},  **file_selector)
+    file_attrs = client.get_attributes(space_specifier, **file_selector)
+
+    assert file_attrs["mode"] == "553"
 
 
-def test_readonly_token_read_random_provider(client, client_ro):
-    """Test 'get_file_content' method using ro token from any provider."""
-    test_dir = random_path()
-    file_path = os.path.join(test_dir, random_str())
+def test_list_children(client: OnedataFileRESTClient):
+    """Test 'list_children' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
-    file_id = client.create_file('test_onedatarestfs', file_path, 'REG', True)
-    file_content = random_bytes(1024)
-    client.put_file_content('test_onedatarestfs', file_id, 0, file_content)
+    file_count = random_int(20, 50)
+    dir_path = random_path()
 
-    #
-    # Since providers are selected randomly, we have to wait until
-    # both providers supporting this space are aware of the file
-    # and it's location
-    #
-    retry_count = 30
-    while retry_count > 0:
-        try:
-            assert client_ro.get_file_content('test_onedatarestfs',
-                                              0,
-                                              1024,
-                                              file_id=file_id) == file_content
+    exp_children = []
+    for _ in range(file_count):
+        file_name = random_str(random_int(lower_bound=10))
+        file_path = os.path.join(dir_path, file_name)
+        client.create_file(space_specifier, file_path, create_parents=True)
+
+        exp_children.append({
+            "name": file_name,
+            "type": "REG",
+        })
+
+    token = None
+    limit = random_int(4, 10)
+    dir_id = client.get_file_id(space_specifier, dir_path)
+    dir_selector = _random_file_selector(dir_id, dir_path)
+
+    children = []
+    while True:
+        result = client.list_children(space_specifier,
+                                      limit=limit,
+                                      continuation_token=token,
+                                      **dir_selector)
+        children.extend(result["children"])
+        if result["isLast"]:
             break
-        except OnedataRESTError:
-            time.sleep(1)
-            retry_count -= 1
+        else:
+            token = result["nextPageToken"]
 
-    assert retry_count > 0
+    def sort_files(files):
+        return sorted(files, key=lambda d: d['name'])
+
+    assert sort_files(children) == sort_files(exp_children)
 
 
-def test_readonly_token_delete_eacces(client_krakow, client_ro_krakow):
-    """Test 'remove' method using readonly token."""
-    test_dir = random_path()
-    file_path = os.path.join(test_dir, random_str())
+def test_get_file_content(client_krakow: OnedataFileRESTClient):
+    """Test 'get_file_content' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
 
-    file_id = client_krakow.create_file('test_onedatarestfs', file_path, 'REG',
-                                        True)
+    file_path = random_path()
+    file_id = client_krakow.create_file(space_specifier,
+                                        file_path,
+                                        create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
+    file_size = 1024
+    exp_file_content = random_bytes(file_size)
+    client_krakow.put_file_content(space_specifier, exp_file_content,
+                                   **file_selector)
+
+    assert exp_file_content == client_krakow.get_file_content(
+        space_specifier, **file_selector)
+
+    assert exp_file_content[100:300] == client_krakow.get_file_content(
+        space_specifier, offset=100, size=200, **file_selector)
+
+
+def test_get_file_content_with_readonly_token_on_the_same_provider(
+        client_krakow: OnedataFileRESTClient,
+        client_ro_krakow: OnedataFileRESTClient):
+    """Test 'get_file_content' method using readonly token."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
+
+    file_path = random_path()
+    file_id = client_krakow.create_file(space_specifier,
+                                        file_path,
+                                        create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
     file_content = random_bytes(1024)
-    client_krakow.put_file_content('test_onedatarestfs', file_id, 0,
-                                   file_content)
+    client_krakow.put_file_content(space_specifier, file_content,
+                                   **file_selector)
 
-    with pytest.raises(OnedataRESTError) as excinfo:
-        client_ro_krakow.remove('test_onedatarestfs', file_path)
-
-    e = excinfo.value
-    assert e.http_code == 400
-    assert e.error_category == 'posix'
-    assert e.error_details == {"errno": "eacces"}
-    assert e.description == "Operation failed with POSIX error: eacces."
+    assert client_ro_krakow.get_file_content(space_specifier,
+                                             **file_selector) == file_content
 
 
-def test_enoent_space(client):
+def test_enoent_space(client: OnedataFileRESTClient):
     """Test 'get_file_content' on non-existing space."""
     with pytest.raises(OnedataRESTError) as excinfo:
-        client.get_file_content('NO_SUCH_SPACE',
-                                0,
-                                1024,
-                                file_path=random_path())
+        client.get_file_content("NO_SUCH_SPACE", file_path=random_path())
 
     e = excinfo.value
     assert e.http_code == 400
-    assert e.error_category == 'posix'
-    assert e.error_details == "Space NO_SUCH_SPACE doesn't exist"
+    assert e.error_category == "posix"
+    assert e.error_details == "Space NO_SUCH_SPACE does not exist"
     assert e.description == "enoent"
 
 
-def test_enoent_file(client):
+def test_enoent_file(client: OnedataFileRESTClient):
     """Test 'get_file_content' on non-existing file."""
-    test_dir = random_path()
-    file_path = os.path.join(test_dir, random_str())
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+    file_path = random_path()
 
     with pytest.raises(OnedataRESTError) as excinfo:
-        client.get_file_content('test_onedatarestfs',
-                                0,
-                                1024,
-                                file_path=file_path)
+        client.get_file_content(space_specifier, file_path=file_path)
 
     e = excinfo.value
     assert e.http_code == 400
-    assert e.error_category == 'posix'
+    assert e.error_category == "posix"
     assert e.error_details == {"errno": "enoent"}
     assert e.description == "Operation failed with POSIX error: enoent."
 
 
-def test_iterating_file_content(client_krakow):
-    """Test 'iter_file_content'."""
-    test_dir = random_path()
-    file_path = os.path.join(test_dir, random_str())
+def test_iter_file_content(client_krakow: OnedataFileRESTClient):
+    """Test 'iter_file_content' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
 
-    file_id = client_krakow.create_file('test_onedatarestfs', file_path, 'REG',
-                                        True)
+    file_path = random_path()
+    file_id = client_krakow.create_file(space_specifier,
+                                        file_path,
+                                        create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
     file_content = random_bytes(1024)
-    client_krakow.put_file_content('test_onedatarestfs', file_id, 0,
-                                   file_content)
+    client_krakow.put_file_content(space_specifier, file_content,
+                                   **file_selector)
 
     chunk_size = random_int(4, 100)
-    buff = b''
-    for chunk in client_krakow.iter_file_content('test_onedatarestfs',
-                                                 chunk_size,
-                                                 file_id=file_id):
+    stream = client_krakow.iter_file_content(space_specifier, chunk_size,
+                                             **file_selector)
+
+    buff = b""
+    for chunk in stream:
         assert len(chunk) <= chunk_size
         buff += chunk
 
     assert buff == file_content
+
+
+def test_put_file_content(client: OnedataFileRESTClient):
+    """Test 'put_file_content' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    file_path = random_path()
+    file_id = client.create_file(space_specifier,
+                                 file_path,
+                                 create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
+    file_size = 100
+    rand_bytes = random_bytes(file_size)
+    client.put_file_content(space_specifier,
+                            rand_bytes,
+                            offset=100,
+                            **file_selector)
+    exp_file_content = 100 * b"\0" + rand_bytes
+
+    assert exp_file_content == client.get_file_content(space_specifier,
+                                                       **file_selector)
+
+
+def test_create_file(client: OnedataFileRESTClient):
+    """Test 'create_file' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    file_path = random_path()
+    file_id = client.create_file(space_specifier,
+                                 file_path,
+                                 file_type="REG",
+                                 create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
+    file_content = random_bytes(1024)
+    client.put_file_content(space_specifier, file_content, **file_selector)
+
+    content = client.get_file_content(space_specifier, **file_selector)
+
+    assert (content == file_content)
+
+
+def test_remove(client: OnedataFileRESTClient):
+    """Test 'remove' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    dir_path = random_path()
+    file_path = os.path.join(dir_path, random_str())
+    file_id = client.create_file(space_specifier,
+                                 file_path,
+                                 create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
+    res = client.list_children(space_specifier, file_path=dir_path)
+    assert len(res["children"]) == 1
+
+    client.remove(space_specifier, **file_selector)
+
+    res = client.list_children(space_specifier, file_path=dir_path)
+    assert len(res["children"]) == 0
+
+
+def test_remove_with_readonly_token(client_krakow: OnedataFileRESTClient,
+                                    client_ro_krakow: OnedataFileRESTClient):
+    """Test 'remove' method using readonly token."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
+
+    dir_path = random_path()
+    file_path = os.path.join(dir_path, random_str())
+    file_id = client_krakow.create_file(space_specifier,
+                                        file_path,
+                                        create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
+    file_content = random_bytes(1024)
+    client_krakow.put_file_content(space_specifier, file_content,
+                                   **file_selector)
+
+    with pytest.raises(OnedataRESTError) as excinfo:
+        client_ro_krakow.remove(space_specifier, **file_selector)
+
+    e = excinfo.value
+    assert e.http_code == 400
+    assert e.error_category == "posix"
+    assert e.error_details == {"errno": "eacces"}
+    assert e.description == "Operation failed with POSIX error: eacces."
+
+
+def test_move(client: OnedataFileRESTClient):
+    """Test 'move' method."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    dir_path = random_path()
+    file_path = os.path.join(dir_path, random_str())
+    client.create_file(space_specifier, file_path, create_parents=True)
+
+    target_test_dir = random_path()
+    client.create_file(space_specifier,
+                       target_test_dir,
+                       file_type="DIR",
+                       create_parents=True)
+
+    target_file_path = os.path.join(target_test_dir, random_str())
+
+    res = client.list_children(space_specifier, file_path=dir_path)
+    assert len(res["children"]) == 1
+
+    client.move(space_specifier, file_path, space_specifier, target_file_path)
+
+    res = client.list_children(space_specifier, file_path=dir_path)
+    assert len(res["children"]) == 0
+
+    res = client.list_children(space_specifier, file_path=target_test_dir)
+    assert len(res["children"]) == 1
+
+
+def _random_space_specifier(space_name, client):
+    space_fqn = _get_space_fqn(space_name, client)
+    return random.choice([space_name, space_fqn])
+
+
+def _get_space_fqn(space_name, client):
+    space_id = client.get_space_id(space_name)
+    return f"{space_name}@{space_id}"
+
+
+def _random_file_selector(file_id, file_path):
+    if random.choice([True, False]):
+        return {"file_id": file_id}
+    else:
+        return {"file_path": file_path}

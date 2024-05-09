@@ -59,22 +59,16 @@ class ListChildrenResult(TypedDict):
 def _find_available_provider(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
     def wrapper(self: OnedataFileRESTClient, space_specifier: SpaceSpecifier,
-                *args: Any, provider: Optional[Provider], **kwargs: Any) -> Any:
+                *args: Any, **kwargs: Any) -> Any:
+        provider = kwargs.get("provider")
         if provider is not None:
-            return func(self,
-                        space_specifier,
-                        *args,
-                        provider=provider,
-                        **kwargs)
+            return func(self, space_specifier, *args, **kwargs)
 
         for provider in self._provider_selector.iter_available_space_providers(
                 space_specifier, oz_rest_client=self._oz_client):
             try:
-                return func(self,
-                            space_specifier,
-                            *args,
-                            provider=provider,
-                            **kwargs)
+                kwargs["provider"] = provider
+                return func(self, space_specifier, *args, **kwargs)
             except requests.exceptions.ConnectionError:
                 self._provider_selector.blacklist(provider.id)
 
@@ -212,8 +206,8 @@ class OnedataFileRESTClient:
         if continuation_token is not None:
             qs += f"&token={continuation_token}"
 
-        if provider.version < "25":  # TODO
-            qs += "attribute=name&attribute=type"
+        if provider.version < "21.02.5":  # TODO
+            qs += "&attribute=name&attribute=type"
             data = None
         else:
             data = {"attributes": ["name", "type"]}
@@ -301,7 +295,7 @@ class OnedataFileRESTClient:
         path += f"?type={file_type}&create_parents={parents}"
 
         if mode:
-            path += f"&mode={oct(mode)}"
+            path += f"&mode={oct(mode).lstrip('0o')}"
 
         url = self._build_op_url(provider, path)
         result = self._op_client.put(url, b"").json()["fileId"]

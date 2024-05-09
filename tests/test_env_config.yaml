@@ -51,7 +51,7 @@ openfaas: false
 # scenario directory.
 
 spaces:
-  - name: test_onedatarestfs
+  - name: space_krk_par
     supports:
       - provider: oneprovider-1
         storage_name: 'ceph'
@@ -59,13 +59,13 @@ spaces:
       - provider: oneprovider-2
         storage_name: 'posix'
         size: '100000000' # in bytes
-  - name: test_onedatarestfs_paris
+  - name: space_par
     supports:
       - provider: oneprovider-2
         storage_name: 's3'
         size: '100000000' # in bytes
 
-  - name: test_onedatarestfs_nosupport
+  - name: space_nosupport
 
 storages:
   - ceph
