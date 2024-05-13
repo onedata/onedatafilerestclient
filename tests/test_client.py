@@ -49,31 +49,25 @@ def client_ro(onezone_ip, onezone_readonly_token):
 @pytest.fixture
 def client_krakow(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
-    return OnedataFileRESTClient(
-        onezone_ip,
-        onezone_admin_token,
-        ["dev-oneprovider-krakow.default.svc.cluster.local"],
-        verify_ssl=False)
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_admin_token, [PROVIDER_KRK_DOMAIN],
+                                 verify_ssl=False)
 
 
 @pytest.fixture
 def client_ro_krakow(onezone_ip, onezone_readonly_token):
     """Create readonly OnedataFileRESTClient instance bound to 'krakow'."""
-    return OnedataFileRESTClient(
-        onezone_ip,
-        onezone_readonly_token,
-        ["dev-oneprovider-krakow.default.svc.cluster.local"],
-        verify_ssl=False)
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_readonly_token, [PROVIDER_KRK_DOMAIN],
+                                 verify_ssl=False)
 
 
 @pytest.fixture
 def client_paris(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
-    return OnedataFileRESTClient(
-        onezone_ip,
-        onezone_admin_token,
-        ["dev-oneprovider-paris.default.svc.cluster.local"],
-        verify_ssl=False)
+    return OnedataFileRESTClient(onezone_ip,
+                                 onezone_admin_token, [PROVIDER_PAR_DOMAIN],
+                                 verify_ssl=False)
 
 
 def test_ssl_verification(client_verifying_ssl: OnedataFileRESTClient):
@@ -92,26 +86,31 @@ def test_list_spaces(client: OnedataFileRESTClient):
     assert exp_spaces == sorted(client.list_spaces())
 
 
-def test_get_space_id(client: OnedataFileRESTClient):
+def test_get_space_id(onezone_ip, onezone_admin_token):
     """Test 'get_space_id' method."""
-    space_id = client.get_space_id(SPACE_KRK_PAR_NAME)
-    space_fqn = f"{SPACE_KRK_PAR_NAME}@{space_id}"
+    client = OnedataFileRESTClient(onezone_ip,
+                                   onezone_admin_token, [PROVIDER_KRK_DOMAIN],
+                                   verify_ssl=False)
+    client._oz_client._cache_size_limit = 2
 
-    assert client.get_space_id(space_fqn) == space_id
+    space_krk_id = client.get_space_id(SPACE_KRK_PAR_NAME)
+    exp_cache = {SPACE_KRK_PAR_NAME: space_krk_id}
+    assert exp_cache == client._oz_client._space_specifier_to_id
 
+    # space_fqn resolution should not be cached
+    space_krk_fqn = f"{SPACE_KRK_PAR_NAME}@{space_krk_id}"
+    assert client.get_space_id(space_krk_fqn) == space_krk_id
+    assert exp_cache == client._oz_client._space_specifier_to_id
 
-def test_get_provider_domain_for_space(client_krakow: OnedataFileRESTClient,
-                                       client_ro_krakow: OnedataFileRESTClient,
-                                       client_paris: OnedataFileRESTClient):
-    """Test 'get_provider_domain_for_space' method."""
-    assert client_krakow._select_provider_for_space(
-        SPACE_KRK_PAR_NAME).domain == PROVIDER_KRK_DOMAIN
+    space_par_id = client.get_space_id(SPACE_PAR_NAME)
+    exp_cache[SPACE_PAR_NAME] = space_par_id
+    assert exp_cache == client._oz_client._space_specifier_to_id
 
-    assert client_ro_krakow._select_provider_for_space(
-        SPACE_KRK_PAR_NAME).domain == PROVIDER_KRK_DOMAIN
-
-    assert client_paris._select_provider_for_space(
-        SPACE_KRK_PAR_NAME).domain == PROVIDER_PAR_DOMAIN
+    # with cache size limit set to 2 previous entries should be erased
+    # and single new entry created
+    space_nosupport_id = client.get_space_id(SPACE_NO_SUPPORT_NAME)
+    exp_cache = {SPACE_NO_SUPPORT_NAME: space_nosupport_id}
+    assert exp_cache == client._oz_client._space_specifier_to_id
 
 
 def test_get_file_id(client: OnedataFileRESTClient):
@@ -256,10 +255,10 @@ def test_get_file_content_with_readonly_token_on_the_same_provider(
 
 def test_enoent_space(client: OnedataFileRESTClient):
     """Test 'get_file_content' on non-existing space."""
-    with pytest.raises(OnedataRESTError) as excinfo:
+    with pytest.raises(OnedataRESTError) as exc_info:
         client.get_file_content("NO_SUCH_SPACE", file_path=random_path())
 
-    e = excinfo.value
+    e = exc_info.value
     assert e.http_code == 400
     assert e.error_category == "posix"
     assert e.error_details == "Space NO_SUCH_SPACE does not exist"
@@ -271,10 +270,10 @@ def test_enoent_file(client: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
     file_path = random_path()
 
-    with pytest.raises(OnedataRESTError) as excinfo:
+    with pytest.raises(OnedataRESTError) as exc_info:
         client.get_file_content(space_specifier, file_path=file_path)
 
-    e = excinfo.value
+    e = exc_info.value
     assert e.http_code == 400
     assert e.error_category == "posix"
     assert e.error_details == {"errno": "enoent"}
@@ -384,10 +383,10 @@ def test_remove_with_readonly_token(client_krakow: OnedataFileRESTClient,
     client_krakow.put_file_content(space_specifier, file_content,
                                    **file_selector)
 
-    with pytest.raises(OnedataRESTError) as excinfo:
+    with pytest.raises(OnedataRESTError) as exc_info:
         client_ro_krakow.remove(space_specifier, **file_selector)
 
-    e = excinfo.value
+    e = exc_info.value
     assert e.http_code == 400
     assert e.error_category == "posix"
     assert e.error_details == {"errno": "eacces"}

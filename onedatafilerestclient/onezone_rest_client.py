@@ -1,6 +1,5 @@
 # coding: utf-8
 """Onezone REST API client."""
-# mypy: disable-error-code="method-assign"
 
 __author__ = "Bartosz Walkowicz"
 __copyright__ = "Copyright (C) 2024 Onedata"
@@ -147,14 +146,12 @@ class OnezoneRESTClient:
             *,
             access_token_scope: Optional[AccessTokenScope] = None) -> SpaceId:
         """Get space id by specifier."""
-        space_id = self._space_specifier_to_id.get(space_specifier)
-        if space_id:
-            return space_id
-        if len(self._space_specifier_to_id) > self._cache_size_limit:
-            self._space_specifier_to_id = {}
-
         if is_fully_qualified_space_name(space_specifier):
             _, space_id = unpack_fully_qualified_space_name(space_specifier)
+            return space_id
+
+        space_id = self._space_specifier_to_id.get(space_specifier)
+        if space_id is not None:
             return space_id
 
         if not access_token_scope:
@@ -164,13 +161,20 @@ class OnezoneRESTClient:
 
         for space_id, space_details in all_spaces.items():
             if space_details["name"] == space_specifier:
-                return space_id
+                break
+        else:
+            raise OnedataRESTError(
+                http_code=400,
+                error_category="posix",
+                error_details=f"Space {space_specifier} does not exist",
+                description="enoent")
 
-        raise OnedataRESTError(
-            http_code=400,
-            error_category="posix",
-            error_details=f"Space {space_specifier} does not exist",
-            description="enoent")
+        if len(self._space_specifier_to_id) >= self._cache_size_limit:
+            self._space_specifier_to_id = {space_specifier: space_id}
+        else:
+            self._space_specifier_to_id[space_specifier] = space_id
+
+        return space_id
 
 
 def is_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:
