@@ -7,6 +7,9 @@ import time
 from contextlib import contextmanager
 
 from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
+from onedatafilerestclient.file_attributes import BasicFileAttr
+
+from packaging.version import Version  # type: ignore
 
 import pytest
 
@@ -198,7 +201,7 @@ def test_get_attributes_for_space_dir(client: OnedataFileRESTClient):
 
 
 def test_get_attributes_for_file(client: OnedataFileRESTClient):
-    """Test 'get_attributes' method for space directory."""
+    """Test 'get_attributes' method for regular file."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     file_path = random_path()
@@ -214,6 +217,47 @@ def test_get_attributes_for_file(client: OnedataFileRESTClient):
     assert file_id == file_attrs["fileId"]
 
 
+def test_get_selected_attributes(client: OnedataFileRESTClient):
+    """Test 'get_attributes' method with random attributes."""
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    # Set min version to lower that testing providers to allow all new attrs
+    with _mock_min_provider_version_supporting_new_file_attrs(
+            Version("20.1.1")):
+        requested_attrs = [
+            attr for attr in random.sample(list(BasicFileAttr), 8)
+            if attr.value.deprecated_key is not None
+        ]
+        requested_attrs.append(
+            BasicFileAttr.ACL
+        )  # append single attr not available in deprecated api
+
+        space_attrs = client.get_attributes(space_specifier,
+                                            attributes=requested_attrs)
+        exp_attrs = sorted([attr.api_key for attr in requested_attrs])
+        assert exp_attrs == sorted(space_attrs.keys())
+
+    # Set min version to higher that testing providers to disallow new attrs
+    with _mock_min_provider_version_supporting_new_file_attrs(
+            Version("30.1.1")):
+        with pytest.raises(OnedataRESTError) as exc_info:
+            client.get_attributes(space_specifier, attributes=requested_attrs)
+
+            error = exc_info.value
+            assert error.http_code == 400
+            assert error.error_category == "posix"
+            assert error.error_details == (
+                "The provider chosen for this space ({domain}) is in version "
+                "({24.02.1}) that does not support the 'BaseFileAttr.ACL' "
+                "attribute (requires Oneprovider version >= 30.1.1)")
+            assert error.description == "einval"
+
+        space_attrs = client.get_attributes(space_specifier,
+                                            attributes=requested_attrs[:-1])
+        exp_attrs = sorted([attr.api_key for attr in requested_attrs[:-1]])
+        assert exp_attrs == sorted(space_attrs.keys())
+
+
 def test_set_attributes(client: OnedataFileRESTClient):
     """Test 'set_attributes' method."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
@@ -226,12 +270,12 @@ def test_set_attributes(client: OnedataFileRESTClient):
     file_selector = _random_file_selector(file_id, file_path)
 
     file_attrs = client.get_attributes(space_specifier, **file_selector)
-    assert file_attrs["mode"] == "775"
+    assert file_attrs["posixPermissions"] == "775"
 
     client.set_attributes(space_specifier, {"mode": "553"}, **file_selector)
     file_attrs = client.get_attributes(space_specifier, **file_selector)
 
-    assert file_attrs["mode"] == "553"
+    assert file_attrs["posixPermissions"] == "553"
 
 
 def test_list_children(client: OnedataFileRESTClient):
@@ -520,3 +564,15 @@ def _mock_http_client_get(raise_connection_error_for_provider_domains):
         yield
     finally:
         HttpClient.get = original_get_method
+
+
+@contextmanager
+def _mock_min_provider_version_supporting_new_file_attrs(mock_version):
+    import onedatafilerestclient.file_attributes as fa
+
+    original_version = fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION
+    try:
+        fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION = mock_version
+        yield
+    finally:
+        fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION = original_version

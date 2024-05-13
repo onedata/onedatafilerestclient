@@ -8,4 +8,10 @@ __license__ = "This software is released under the MIT license cited in " \
 __all__ = ['OnedataRESTError', 'OnedataFileRESTClient']
 
 from .errors import OnedataRESTError  # noqa
-from .onedata_file_rest_client import OnedataFileRESTClient  # noqa
+from .file_attributes import (  # noqa
+    BasicFileAttr, FileAttr, FileAttrsJson, FileType, InheritancePath,
+    ProtectionFlag, XattrKey)
+from .onedata_file_rest_client import (  # noqa
+    ListChildrenResult, OnedataFileRESTClient)
+from .onezone_rest_client import (  # noqa
+    SpaceFQN, SpaceId, SpaceName, SpaceSpecifier)

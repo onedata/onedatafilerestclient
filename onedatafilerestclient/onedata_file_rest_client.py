@@ -1,8 +1,5 @@
 # coding: utf-8
 """Onedata REST file API client."""
-# mypy: disable-error-code="method-assign"
-
-from __future__ import annotations
 
 __author__ = "Bartek Kryza"
 __copyright__ = "Copyright (C) 2023 Onedata"
@@ -15,16 +12,17 @@ import typing
 from functools import wraps
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-from packaging.version import Version  # type: ignore
-
 import requests
 
 if sys.version_info < (3, 11):
-    from typing_extensions import NotRequired, TypeAlias, TypedDict
+    from typing_extensions import TypeAlias, TypedDict
 else:
-    from typing import NotRequired, TypeAlias, TypedDict
+    from typing import TypeAlias, TypedDict
 
-from . import OnedataRESTError
+from .errors import OnedataRESTError
+from .file_attributes import (BasicFileAttr, FileAttr, FileAttrsJson, FileType,
+                              build_http_get_file_attr_params,
+                              sanitize_file_attrs_json)
 from .httpclient import HttpClient
 from .onezone_rest_client import (AccessTokenScope, OnezoneRESTClient, SpaceFQN,
                                   SpaceId, SpaceName, SpaceSpecifier)
@@ -37,15 +35,6 @@ File path relative to space, that is without space specifier prefix.
 """
 
 
-class ChildAttrs(TypedDict):
-    """Directory child basic attributes."""
-
-    name: str
-    type: str
-    file_id: NotRequired[FileId]
-    fileId: NotRequired[FileId]
-
-
 class ListChildrenResult(TypedDict):
     """Directory listing result.
 
@@ -53,14 +42,14 @@ class ListChildrenResult(TypedDict):
     https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/list_children
     """
 
-    children: List[ChildAttrs]
+    children: List[FileAttrsJson]
     isLast: bool
     nextPageToken: Optional[str]
 
 
 def _find_available_provider(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
-    def wrapper(self: OnedataFileRESTClient, space_specifier: SpaceSpecifier,
+    def wrapper(self: "OnedataFileRESTClient", space_specifier: SpaceSpecifier,
                 *args: Any, **kwargs: Any) -> Any:
         provider = kwargs.get("provider")
         if provider is not None:
@@ -152,14 +141,13 @@ class OnedataFileRESTClient:
                 retries -= 1
 
     @_find_available_provider
-    def get_attributes(
-            self,
-            space_specifier: SpaceSpecifier,
-            *,
-            file_path: Optional[FilePath] = None,
-            file_id: Optional[FileId] = None,
-            provider: Optional[Provider] = None
-    ) -> Dict[str, Any]:  # TODO type?
+    def get_attributes(self,
+                       space_specifier: SpaceSpecifier,
+                       *,
+                       attributes: Optional[List[FileAttr]] = None,
+                       file_path: Optional[FilePath] = None,
+                       file_id: Optional[FileId] = None,
+                       provider: Optional[Provider] = None) -> FileAttrsJson:
         """Get file or directory attributes."""
         provider = self._ensure_provider(space_specifier, provider)
         file_id = self._resolve_file_id(space_specifier,
@@ -167,9 +155,15 @@ class OnedataFileRESTClient:
                                         file_id=file_id,
                                         provider=provider)
         url = self._build_op_url(provider, f"/data/{file_id}")
-        attrs = self._op_client.get(url).json()
+        qs, body = build_http_get_file_attr_params(provider, attributes)
+        if qs:
+            url += f"?{qs}"
 
-        return typing.cast(Dict[str, Any], attrs)
+        attrs = sanitize_file_attrs_json(
+            provider, attributes,
+            self._op_client.get(url, data=body).json())
+
+        return typing.cast(FileAttrsJson, attrs)
 
     @_find_available_provider
     def set_attributes(self,
@@ -195,6 +189,7 @@ class OnedataFileRESTClient:
             *,
             limit: int = 1000,
             continuation_token: Optional[str] = None,
+            attributes: Optional[List[FileAttr]] = None,
             file_path: Optional[FilePath] = None,
             file_id: Optional[FileId] = None,
             provider: Optional[Provider] = None) -> ListChildrenResult:
@@ -208,14 +203,20 @@ class OnedataFileRESTClient:
         if continuation_token is not None:
             qs += f"&token={continuation_token}"
 
-        if provider.version < Version("21.02.5"):
-            qs += "&attribute=name&attribute=type"
-            data = None
-        else:
-            data = {"attributes": ["name", "type"]}
+        if not attributes:
+            attributes = [BasicFileAttr.NAME, BasicFileAttr.TYPE]
+
+        qs_attrs, body = build_http_get_file_attr_params(provider, attributes)
+        if qs_attrs:
+            qs += f"&{qs_attrs}"
 
         url = self._build_op_url(provider, f"/data/{dir_file_id}/children{qs}")
-        result = self._op_client.get(url, data=data).json()
+        result = self._op_client.get(url, data=body).json()
+        result["children"] = [
+            sanitize_file_attrs_json(provider, attributes, file_attrs_json)
+            for file_attrs_json in result["children"]
+        ]
+
         return typing.cast(ListChildrenResult, result)
 
     @_find_available_provider
@@ -281,10 +282,10 @@ class OnedataFileRESTClient:
 
     @_find_available_provider
     def create_file(self,
-                    space_specifier: str,
-                    file_path: str,
+                    space_specifier: SpaceSpecifier,
+                    file_path: FilePath,
                     *,
-                    file_type: str = "REG",
+                    file_type: FileType = "REG",
                     create_parents: bool = False,
                     mode: Optional[int] = None,
                     provider: Optional[Provider] = None) -> FileId:

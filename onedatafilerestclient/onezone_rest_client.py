@@ -150,7 +150,8 @@ class OnezoneRESTClient:
             _, space_id = unpack_fully_qualified_space_name(space_specifier)
             return space_id
 
-        space_id = self._space_specifier_to_id.get(space_specifier)
+        space_id = self._space_specifier_to_id.get(
+            space_specifier)  # type: ignore
         if space_id is not None:
             return space_id
 

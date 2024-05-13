@@ -39,10 +39,15 @@ class HttpClient:
                       *,
                       stream: bool = False) -> requests.Response:
         """Perform an HTTP request."""
+        if isinstance(data, dict):
+            body = json.dumps(data)
+        else:
+            body = data
+
         if 'Content-type' not in headers:
             headers['Content-type'] = 'application/json'
 
-        req = requests.Request(method, url, data=data, headers=headers)
+        req = requests.Request(method, url, data=body, headers=headers)
         prepared = self.session.prepare_request(req)
         response = self.session.send(prepared,
                                      stream=stream,
@@ -68,24 +73,14 @@ class HttpClient:
             data: Any = None,
             headers: dict[str, str] = {}) -> requests.Response:
         """Perform a PUT request."""
-        if isinstance(data, dict):
-            body = json.dumps(data)
-        else:
-            body = data
-
-        return self._send_request('PUT', url, body, headers)
+        return self._send_request('PUT', url, data, headers)
 
     def post(self,
              url: str,
              data: Any = None,
              headers: dict[str, str] = {}) -> requests.Response:
         """Perform a POST request."""
-        if isinstance(data, dict):
-            body = json.dumps(data)
-        else:
-            body = data
-
-        return self._send_request('POST', url, body, headers)
+        return self._send_request('POST', url, data, headers)
 
     def delete(self,
                url: str,
