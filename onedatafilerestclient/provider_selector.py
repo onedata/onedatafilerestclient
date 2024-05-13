@@ -1,3 +1,4 @@
+# coding: utf-8
 """Provider selector utilities."""
 
 __author__ = "Bartosz Walkowicz"
@@ -6,14 +7,11 @@ __license__ = (
     "This software is released under the MIT license cited in LICENSE.txt")
 
 import time
-from typing import Dict, Final, Iterator, List, NamedTuple, Optional
+from typing import Dict, Iterator, List, NamedTuple, Optional
 
 from packaging.version import Version, parse  # type: ignore
 
 from .onezone_rest_client import OnezoneRESTClient, ProviderId, SpaceSpecifier
-
-_CACHE_SIZE_LIMIT: Final[int] = 512
-_BLACKLIST_TIME_LIMIT_NS: Final[int] = 5 * 10**9
 
 
 class Provider(NamedTuple):
@@ -29,6 +27,9 @@ class ProviderSelector:
     preferred_provider_domains: List[str]
     _provider_blacklist: Dict[ProviderId, int]
     _provider_for_space: Dict[SpaceSpecifier, Provider]
+
+    _cache_size_limit: int = 512
+    _blacklist_time_limit_ns: int = 5 * 10**9
 
     def __init__(
             self,
@@ -53,9 +54,9 @@ class ProviderSelector:
 
     def blacklist(self, provider_id: ProviderId) -> None:
         """Check if specified provider is blacklisted."""
-        blacklist_time_end = time.time_ns() + _BLACKLIST_TIME_LIMIT_NS
+        blacklist_time_end = time.time_ns() + self._blacklist_time_limit_ns
 
-        if len(self._provider_blacklist) > _CACHE_SIZE_LIMIT:
+        if len(self._provider_blacklist) > self._cache_size_limit:
             self._provider_blacklist = {provider_id: blacklist_time_end}
         else:
             self._provider_blacklist[provider_id] = blacklist_time_end
@@ -65,8 +66,13 @@ class ProviderSelector:
             oz_rest_client: OnezoneRESTClient) -> Iterator[Provider]:
         """Iterate over online and not not blacklisted space providers."""
         if space_specifier in self._provider_for_space:
-            yield self._provider_for_space[space_specifier]
-        if len(self._provider_for_space) > _CACHE_SIZE_LIMIT:
+            provider = self._provider_for_space[space_specifier]
+            if not self.is_blacklisted(provider.id):
+                yield self._provider_for_space[space_specifier]
+
+            del self._provider_for_space[space_specifier]
+
+        if len(self._provider_for_space) >= self._cache_size_limit:
             # clear cache
             self._provider_for_space = {}
 
@@ -114,7 +120,8 @@ class ProviderSelector:
             provider for _, provider in preferred_supporting_providers
         ]
 
-        remaining_supporting_providers.sort(key=lambda x: x.version, reverse=True)
+        remaining_supporting_providers.sort(key=lambda x: x.version,
+                                            reverse=True)
         supporting_providers.extend(remaining_supporting_providers)
 
         return supporting_providers

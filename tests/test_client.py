@@ -3,12 +3,14 @@
 
 import os
 import random
+import time
+from contextlib import contextmanager
 
 from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 
 import pytest
 
-from requests.exceptions import SSLError
+from requests.exceptions import ConnectionError, SSLError
 
 from .common import random_bytes, random_int, random_path, random_str
 
@@ -111,6 +113,68 @@ def test_get_space_id(onezone_ip, onezone_admin_token):
     space_nosupport_id = client.get_space_id(SPACE_NO_SUPPORT_NAME)
     exp_cache = {SPACE_NO_SUPPORT_NAME: space_nosupport_id}
     assert exp_cache == client._oz_client._space_specifier_to_id
+
+
+def test_provider_selector(onezone_ip, onezone_admin_token):
+    """Test provider fallback on connection error."""
+    providers = [PROVIDER_KRK_DOMAIN, PROVIDER_PAR_DOMAIN]
+    random.shuffle(providers)
+    first_choice_provider, second_choice_provider = providers
+
+    client = OnedataFileRESTClient(onezone_ip,
+                                   onezone_admin_token, [first_choice_provider],
+                                   verify_ssl=False)
+
+    client._provider_selector._blacklist_time_limit_ns = 1 * 10**9
+
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    def get_selected_provider_domain():
+        provider = client._select_provider_for_space(space_specifier)
+        return provider.domain
+
+    # provider 'first_choice_provider' is chosen with accordance to
+    # preferred providers
+    client.get_attributes(space_specifier)
+    assert get_selected_provider_domain() == first_choice_provider
+
+    # with connection error raised 'first_choice_provider' should be
+    # blacklisted for a while and next in line provider
+    # - second_choice_provider - should be selected
+    with _mock_http_client_get([first_choice_provider]):
+        client.get_attributes(space_specifier)
+        assert get_selected_provider_domain() == second_choice_provider
+
+    client.get_attributes(space_specifier)
+    assert get_selected_provider_domain() == second_choice_provider
+
+    # with connection error raised by 'second_choice_provider' there should
+    # be no available providers left
+    with _mock_http_client_get([second_choice_provider]):
+        with pytest.raises(OnedataRESTError) as exc_info:
+            client.get_attributes(space_specifier)
+
+        _assert_no_available_provider_error(exc_info.value, space_specifier)
+
+    # even without mock providers should still be blacklisted
+    with pytest.raises(OnedataRESTError) as exc_info:
+        client.get_attributes(space_specifier)
+
+    _assert_no_available_provider_error(exc_info.value, space_specifier)
+
+    # but after blacklist time ends 'first_choice_provider' should be
+    # again selected
+    time.sleep(2)
+    client.get_attributes(space_specifier)
+    assert get_selected_provider_domain() == first_choice_provider
+
+
+def _assert_no_available_provider_error(error, space_specifier):
+    assert error.http_code == 400
+    assert error.error_category == "posix"
+    assert error.error_details == f"No available provider for space " \
+                                  f"{space_specifier}"
+    assert error.description == "eagain"
 
 
 def test_get_file_id(client: OnedataFileRESTClient):
@@ -436,3 +500,23 @@ def _random_file_selector(file_id, file_path):
         return {"file_id": file_id}
     else:
         return {"file_path": file_path}
+
+
+@contextmanager
+def _mock_http_client_get(raise_connection_error_for_provider_domains):
+    from onedatafilerestclient.httpclient import HttpClient
+
+    original_get_method = HttpClient.get
+
+    def mock_get(self, url, *args, **kwargs):
+        for domain in raise_connection_error_for_provider_domains:
+            if domain in url:
+                raise ConnectionError()
+
+        return original_get_method(self, url, *args, **kwargs)
+
+    try:
+        HttpClient.get = mock_get
+        yield
+    finally:
+        HttpClient.get = original_get_method
