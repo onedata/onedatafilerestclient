@@ -3,8 +3,7 @@
 
 __author__ = "Bartek Kryza"
 __copyright__ = "Copyright (C) 2023 Onedata"
-__license__ = (
-    "This software is released under the MIT license cited in LICENSE.txt")
+__license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
 import json
 import sys
@@ -14,19 +13,30 @@ from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import requests
 
+from .errors import NoAvailableProviderForSpaceError
+from .file_attributes import (
+    FileAttrKey,
+    FileAttrsJson,
+    FileType,
+    build_http_get_file_attr_params,
+    normalize_file_attrs_json,
+)
+from .httpclient import HttpClient
+from .onezone_rest_client import (
+    AccessTokenScope,
+    OnezoneRESTClient,
+    SpaceFQN,
+    SpaceId,
+    SpaceName,
+    SpaceSpecifier,
+)
+from .provider_selector import Provider, ProviderSelector
+
 if sys.version_info < (3, 11):
     from typing_extensions import TypeAlias, TypedDict
 else:
     from typing import TypeAlias, TypedDict
 
-from .errors import OnedataRESTError
-from .file_attributes import (BasicFileAttr, FileAttr, FileAttrsJson, FileType,
-                              build_http_get_file_attr_params,
-                              sanitize_file_attrs_json)
-from .httpclient import HttpClient
-from .onezone_rest_client import (AccessTokenScope, OnezoneRESTClient, SpaceFQN,
-                                  SpaceId, SpaceName, SpaceSpecifier)
-from .provider_selector import Provider, ProviderSelector
 
 FileId: TypeAlias = str
 FilePath: TypeAlias = str
@@ -49,25 +59,28 @@ class ListChildrenResult(TypedDict):
 
 def _find_available_provider(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
-    def wrapper(self: "OnedataFileRESTClient", space_specifier: SpaceSpecifier,
-                *args: Any, **kwargs: Any) -> Any:
+    def wrapper(
+        self: "OnedataFileRESTClient",
+        space_specifier: SpaceSpecifier,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
         provider = kwargs.get("provider")
         if provider is not None:
             return func(self, space_specifier, *args, **kwargs)
 
-        for provider in self._provider_selector.iter_available_space_providers(
-                space_specifier, oz_rest_client=self._oz_client):
+        # pylint: disable=W0212
+        provider_selector = self._provider_selector
+        for provider in provider_selector.iter_available_space_providers(
+            space_specifier, oz_rest_client=self._oz_client
+        ):
             try:
                 kwargs["provider"] = provider
                 return func(self, space_specifier, *args, **kwargs)
             except requests.exceptions.ConnectionError:
-                self._provider_selector.blacklist(provider.id)
+                provider_selector.blacklist(provider.id)
 
-        raise OnedataRESTError(
-            http_code=400,
-            error_category="posix",
-            error_details=f"No available provider for space {space_specifier}",
-            description="eagain")
+        raise NoAvailableProviderForSpaceError(space_specifier)
 
     return wrapper
 

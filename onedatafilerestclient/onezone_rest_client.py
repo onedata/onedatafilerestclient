@@ -3,20 +3,20 @@
 
 __author__ = "Bartosz Walkowicz"
 __copyright__ = "Copyright (C) 2024 Onedata"
-__license__ = (
-    "This software is released under the MIT license cited in LICENSE.txt")
+__license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
 import sys
 import typing
 from typing import Dict, List, Optional, Tuple, Union
+
+from .errors import SpaceNotFoundError
+from .httpclient import HttpClient
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeAlias, TypedDict
 else:
     from typing import TypeAlias, TypedDict
 
-from .errors import OnedataRESTError  # noqa
-from .httpclient import HttpClient
 
 ProviderId: TypeAlias = str
 
@@ -89,6 +89,7 @@ class AccessTokenScope(TypedDict):
 
 class OnezoneRESTClient:
     """Custom REST client for Onezone REST basic operations API."""
+
     _cache_size_limit: int = 512
 
     _host: str
@@ -141,17 +142,17 @@ class OnezoneRESTClient:
         return supported_spaces
 
     def get_space_id(
-            self,
-            space_specifier: SpaceSpecifier,
-            *,
-            access_token_scope: Optional[AccessTokenScope] = None) -> SpaceId:
+        self,
+        space_specifier: SpaceSpecifier,
+        *,
+        access_token_scope: Optional[AccessTokenScope] = None,
+    ) -> SpaceId:
         """Get space id by specifier."""
         if is_fully_qualified_space_name(space_specifier):
             _, space_id = unpack_fully_qualified_space_name(space_specifier)
             return space_id
 
-        space_id = self._space_specifier_to_id.get(
-            space_specifier)  # type: ignore
+        space_id = self._space_specifier_to_id.get(space_specifier)  # type: ignore
         if space_id is not None:
             return space_id
 
@@ -164,11 +165,7 @@ class OnezoneRESTClient:
             if space_details["name"] == space_specifier:
                 break
         else:
-            raise OnedataRESTError(
-                http_code=400,
-                error_category="posix",
-                error_details=f"Space {space_specifier} does not exist",
-                description="enoent")
+            raise SpaceNotFoundError(space_specifier)
 
         if len(self._space_specifier_to_id) >= self._cache_size_limit:
             self._space_specifier_to_id = {space_specifier: space_id}
@@ -183,8 +180,7 @@ def is_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:
     return "@" in space_specifier
 
 
-def unpack_fully_qualified_space_name(
-        space_fqn: SpaceFQN) -> Tuple[SpaceName, SpaceId]:
+def unpack_fully_qualified_space_name(space_fqn: SpaceFQN) -> Tuple[SpaceName, SpaceId]:
     """Infer space name and id from fully qualified space name."""
     space_name, space_id = space_fqn.split("@")
     return space_name, space_id
