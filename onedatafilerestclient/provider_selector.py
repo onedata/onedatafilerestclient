@@ -95,13 +95,10 @@ class ProviderSelector:
         self, space_specifier: SpaceSpecifier, *, oz_rest_client: OnezoneRESTClient
     ) -> List[Provider]:
         """List online and not not blacklisted space providers."""
+        space_id = oz_rest_client.get_space_id(space_specifier)
+
         access_token_scope = oz_rest_client.infer_token_scope()
-
         all_providers = access_token_scope["dataAccessScope"]["providers"]
-
-        space_id = oz_rest_client.get_space_id(
-            space_specifier, access_token_scope=access_token_scope
-        )
         space_details = access_token_scope["dataAccessScope"]["spaces"][space_id]
 
         preferred_supporting_providers = []

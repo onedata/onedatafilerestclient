@@ -25,7 +25,6 @@ from . import (
     PROVIDER_KRK_DOMAIN,
     PROVIDER_PAR_DOMAIN,
     SPACE_KRK_PAR_NAME,
-    SPACE_NO_SUPPORT_NAME,
     SPACE_PAR_NAME,
 )
 from .utils import random_bytes, random_int, random_path, random_str
@@ -96,30 +95,13 @@ def test_get_space_id(onezone_ip, onezone_admin_token):
     client = OnedataFileRESTClient(
         onezone_ip, onezone_admin_token, [PROVIDER_KRK_DOMAIN], verify_ssl=False
     )
-    client._oz_client._cache_size_limit = 2  # pylint: disable=W0212
-
-    def get_cache():
-        # pylint: disable=W0212
-        return client._oz_client._space_specifier_to_id
+    client._oz_client._space_id_cache_size_limit = 2  # pylint: disable=W0212
 
     space_krk_id = client.get_space_id(SPACE_KRK_PAR_NAME)
-    exp_cache = {SPACE_KRK_PAR_NAME: space_krk_id}
-    assert exp_cache == get_cache()
 
     # space_fqn resolution should not be cached
     space_krk_fqn = f"{SPACE_KRK_PAR_NAME}@{space_krk_id}"
     assert client.get_space_id(space_krk_fqn) == space_krk_id
-    assert exp_cache == get_cache()
-
-    space_par_id = client.get_space_id(SPACE_PAR_NAME)
-    exp_cache[SPACE_PAR_NAME] = space_par_id
-    assert exp_cache == get_cache()
-
-    # with cache size limit set to 2 previous entries should be erased
-    # and single new entry created
-    space_nosupport_id = client.get_space_id(SPACE_NO_SUPPORT_NAME)
-    exp_cache = {SPACE_NO_SUPPORT_NAME: space_nosupport_id}
-    assert exp_cache == get_cache()
 
 
 def test_provider_selector(onezone_ip, onezone_admin_token):

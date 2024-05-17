@@ -6,8 +6,10 @@ __copyright__ = "Copyright (C) 2024 Onedata"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
 import sys
+import time
 import typing
-from typing import Dict, List, Optional, Tuple, Union
+from functools import lru_cache
+from typing import Dict, Final, List, Optional, Tuple, Union
 
 from .errors import SpaceNotFoundError
 from .httpclient import HttpClient
@@ -87,22 +89,31 @@ class AccessTokenScope(TypedDict):
     dataAccessScope: DataAccessScope
 
 
+_SPACE_ID_CACHE_SIZE_LIMIT: Final[int] = 512
+
+
 class OnezoneRESTClient:
     """Custom REST client for Onezone REST basic operations API."""
-
-    _cache_size_limit: int = 512
 
     _host: str
     _token: str
     _http_client: HttpClient
-    _space_specifier_to_id: Dict[SpaceSpecifier, SpaceId]
+
+    _token_scope_cache: Optional[AccessTokenScope] = None
+    _token_scope_cache_valid_until_ns: int = 0
+    _token_scope_cache_time_limit_ns: int = 2 * 10**9  # 2 seconds
 
     def __init__(self, host: str, token: str, *, verify_ssl: bool = True):
         """Construct OnezoneRESTClient instance."""
         self._host = host
         self._token = token
         self._http_client = HttpClient(verify_ssl=verify_ssl)
-        self._space_specifier_to_id = {}
+
+        # lru_cache cannot be used as decorator, as we want to have a separate
+        # cache for each OnezoneRESTClient instance
+        self.get_space_id_by_name = lru_cache(maxsize=_SPACE_ID_CACHE_SIZE_LIMIT)(
+            self._get_space_id_by_name
+        )
 
     def __eq__(self, other: object) -> bool:
         """Compare 2 instances of OnezoneRESTClient."""
@@ -124,9 +135,29 @@ class OnezoneRESTClient:
 
     def infer_token_scope(self) -> AccessTokenScope:
         """Get current token access scope."""
-        url = self.build_url("/tokens/infer_access_token_scope")
-        result = self._http_client.post(url, {"token": self._token})
-        return typing.cast(AccessTokenScope, result.json())
+        now = time.time_ns()
+        if (
+            self._token_scope_cache is None
+            or now > self._token_scope_cache_valid_until_ns
+        ):
+            url = self.build_url("/tokens/infer_access_token_scope")
+            result = self._http_client.post(url, {"token": self._token})
+            access_token_scope = typing.cast(AccessTokenScope, result.json())
+            valid_until = now + self._token_scope_cache_time_limit_ns
+
+            self._token_scope_cache = access_token_scope
+            self._token_scope_cache_valid_until_ns = valid_until
+
+        return self._token_scope_cache
+
+    def _get_cached_token_scope(self) -> Optional[AccessTokenScope]:
+        if time.time_ns() > self._token_scope_cache_valid_until_ns:
+            self._token_scope_cache = None
+
+        return self._token_scope_cache
+
+    def _cache_token_scope(self, access_token_scope: AccessTokenScope) -> None:
+        pass
 
     def list_spaces(self) -> List[SpaceFQN]:
         """List all spaces available for the current token."""
@@ -141,38 +172,24 @@ class OnezoneRESTClient:
 
         return supported_spaces
 
-    def get_space_id(
-        self,
-        space_specifier: SpaceSpecifier,
-        *,
-        access_token_scope: Optional[AccessTokenScope] = None,
-    ) -> SpaceId:
+    def get_space_id(self, space_specifier: SpaceSpecifier) -> SpaceId:
         """Get space id by specifier."""
         if is_fully_qualified_space_name(space_specifier):
             _, space_id = unpack_fully_qualified_space_name(space_specifier)
             return space_id
 
-        space_id = self._space_specifier_to_id.get(space_specifier)  # type: ignore
-        if space_id is not None:
-            return space_id
+        return self.get_space_id_by_name(space_specifier)
 
-        if not access_token_scope:
-            access_token_scope = self.infer_token_scope()
-
+    def _get_space_id_by_name(self, space_name: SpaceName) -> SpaceId:
+        """Get space id by name."""
+        access_token_scope = self.infer_token_scope()
         all_spaces = access_token_scope["dataAccessScope"]["spaces"]
 
         for space_id, space_details in all_spaces.items():
-            if space_details["name"] == space_specifier:
-                break
-        else:
-            raise SpaceNotFoundError(space_specifier)
+            if space_details["name"] == space_name:
+                return space_id
 
-        if len(self._space_specifier_to_id) >= self._cache_size_limit:
-            self._space_specifier_to_id = {space_specifier: space_id}
-        else:
-            self._space_specifier_to_id[space_specifier] = space_id
-
-        return space_id
+        raise SpaceNotFoundError(space_name)
 
 
 def is_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:
