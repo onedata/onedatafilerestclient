@@ -1,24 +1,22 @@
 # coding: utf-8
 """REST-style HTTP client wrapper over requests."""
 
-from __future__ import annotations
-
 __author__ = "Bartek Kryza"
 __copyright__ = "Copyright (C) 2023 Onedata"
-__license__ = (
-    "This software is released under the MIT license cited in LICENSE.txt")
+__license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
 import json
 import logging
-from typing import Any
-
-from onedatafilerestclient import OnedataRESTError
+from typing import Any, Dict, Optional
 
 import requests
+
+from .errors import OnedataRESTError
 
 
 class HttpClient:
     """REST-style wrapper over requests library."""
+
     timeout: int = 5
     session: requests.Session
 
@@ -31,67 +29,67 @@ class HttpClient:
         """Return requests session instance."""
         return self.session
 
-    def _send_request(self,
-                      method: str,
-                      url: str,
-                      data: Any = None,
-                      headers: dict[str, str] = {},
-                      *,
-                      stream: bool = False) -> requests.Response:
+    def _send_request(
+        self,
+        method: str,
+        url: str,
+        data: Any = None,
+        headers: Optional[Dict[str, str]] = None,
+        *,
+        stream: bool = False,
+    ) -> requests.Response:
         """Perform an HTTP request."""
         if isinstance(data, dict):
             body = json.dumps(data)
         else:
             body = data
 
-        if 'Content-type' not in headers:
-            headers['Content-type'] = 'application/json'
+        if headers is None:
+            headers = {}
+        if "Content-type" not in headers:
+            headers["Content-type"] = "application/json"
 
         req = requests.Request(method, url, data=body, headers=headers)
         prepared = self.session.prepare_request(req)
-        response = self.session.send(prepared,
-                                     stream=stream,
-                                     timeout=self.timeout)
+        response = self.session.send(prepared, stream=stream, timeout=self.timeout)
 
         if not response.ok:
-            logging.debug(f"ERROR: {method} {url} '{response.text}'")
+            logging.debug("ERROR: %s %s '%s'", method, url, response.text)
             raise OnedataRESTError.from_response(response)
 
         return response
 
-    def get(self,
-            url: str,
-            data: Any = None,
-            headers: dict[str, str] = {},
-            *,
-            stream: bool = False) -> requests.Response:
+    def get(
+        self,
+        url: str,
+        data: Any = None,
+        headers: Optional[Dict[str, str]] = None,
+        *,
+        stream: bool = False,
+    ) -> requests.Response:
         """Perform a GET request."""
-        return self._send_request('GET', url, data, headers, stream=stream)
+        return self._send_request("GET", url, data, headers, stream=stream)
 
-    def put(self,
-            url: str,
-            data: Any = None,
-            headers: dict[str, str] = {}) -> requests.Response:
+    def put(
+        self, url: str, data: Any = None, headers: Optional[Dict[str, str]] = None
+    ) -> requests.Response:
         """Perform a PUT request."""
-        return self._send_request('PUT', url, data, headers)
+        return self._send_request("PUT", url, data, headers)
 
-    def post(self,
-             url: str,
-             data: Any = None,
-             headers: dict[str, str] = {}) -> requests.Response:
+    def post(
+        self, url: str, data: Any = None, headers: Optional[Dict[str, str]] = None
+    ) -> requests.Response:
         """Perform a POST request."""
-        return self._send_request('POST', url, data, headers)
+        return self._send_request("POST", url, data, headers)
 
-    def delete(self,
-               url: str,
-               data: Any = None,
-               headers: dict[str, str] = {}) -> requests.Response:
+    def delete(
+        self, url: str, data: Any = None, headers: Optional[Dict[str, str]] = None
+    ) -> requests.Response:
         """Perform a DELETE request."""
-        return self._send_request('DELETE', url, data, headers)
+        return self._send_request("DELETE", url, data, headers)
 
-    def head(self,
-             url: str,
-             data: Any = None,
-             headers: dict[str, str] = {}) -> requests.Response:
+    def head(
+        self, url: str, data: Any = None, headers: Optional[Dict[str, str]] = None
+    ) -> requests.Response:
         """Perform a HEAD request."""
-        return self._send_request('HEAD', url, data, headers)
+        return self._send_request("HEAD", url, data, headers)

@@ -1,21 +1,28 @@
 # coding: utf-8
 """Pytest test setup."""
 
+__author__ = "Bartek Kryza"
+__copyright__ = "Copyright (C) 2023 Onedata"
+__license__ = "This software is released under the MIT license cited in LICENSE.txt"
+
 import logging
 import os
 import time
-import uuid
+from typing import Final
+
+import requests
+from urllib3.util import connection
 
 import pytest
 
-import requests
-
-from urllib3.util import connection
+from . import PROVIDER_KRK_DOMAIN, PROVIDER_PAR_DOMAIN, ZONE_DOMAIN
 
 
 def trace_requests_messages() -> None:
     """Enable logging HTTP requests."""
+    # pylint: disable=C0415
     import http.client as http_client
+
     http_client.HTTPConnection.debuglevel = 1
 
     logging.basicConfig()
@@ -28,7 +35,6 @@ def trace_requests_messages() -> None:
 # Uncomment to enable HTTP request trace log
 # trace_requests_messages()
 
-FIXTURE_SCOPE = "session"
 
 _original_create_connection = connection.create_connection
 
@@ -38,12 +44,12 @@ def patched_create_connection(address, *args, **kwargs):
     host, port = address
     hostname = host
 
-    if host == 'dev-onezone-0.default.svc.cluster.local':
-        hostname = os.getenv('DEV_ONEZONE_0')
-    elif host == 'dev-oneprovider-krakow.default.svc.cluster.local':
-        hostname = os.getenv('DEV_ONEPROVIDER_KRAKOW_0')
-    elif host == 'dev-oneprovider-paris.default.svc.cluster.local':
-        hostname = os.getenv('DEV_ONEPROVIDER_PARIS_0')
+    if host == ZONE_DOMAIN:
+        hostname = os.getenv("DEV_ONEZONE_0")
+    elif host == PROVIDER_KRK_DOMAIN:
+        hostname = os.getenv("DEV_ONEPROVIDER_KRAKOW_0")
+    elif host == PROVIDER_PAR_DOMAIN:
+        hostname = os.getenv("DEV_ONEPROVIDER_PARIS_0")
 
     return _original_create_connection((hostname, port), *args, **kwargs)
 
@@ -51,75 +57,62 @@ def patched_create_connection(address, *args, **kwargs):
 connection.create_connection = patched_create_connection
 
 
+FIXTURE_SCOPE: Final[str] = "session"
+
+
 @pytest.fixture(scope="module", autouse=True)
-def wait_for_support_sync():
+def fixture_wait_for_support_sync():
     """Wait until providers are fully synchronized after setup."""
     time.sleep(10)
 
 
-@pytest.fixture(scope=FIXTURE_SCOPE)
-def git_version():
-    """Get version based on Git commit."""
-    gv = os.getenv('GIT_VERSION')
-    yield gv
-
-
-@pytest.fixture
-def uuid_str():
-    """Generate UUID v4."""
-    return str(uuid.uuid4())
-
-
-@pytest.fixture(scope=FIXTURE_SCOPE)
-def onezone_ip():
+@pytest.fixture(scope=FIXTURE_SCOPE, name="onezone_ip")
+def fixture_onezone_ip():
     """Get Onezone IP from environment variable."""
-    ozip = os.getenv('DEV_ONEZONE_0')
-    yield ozip
+    return os.getenv("DEV_ONEZONE_0")
 
 
-@pytest.fixture(scope=FIXTURE_SCOPE)
-def oneprovider_krakow_ip():
+@pytest.fixture(scope=FIXTURE_SCOPE, name="provider_krk_ip")
+def fixture_provider_krk_ip():
     """Get Oneprovider 'krakow' IP from environment variable."""
-    opip = os.getenv('DEV_ONEPROVIDER_KRAKOW_0')
-    yield opip
+    return os.getenv("DEV_ONEPROVIDER_KRAKOW_0")
 
 
-@pytest.fixture(scope=FIXTURE_SCOPE)
-def oneprovider_paris_ip():
+@pytest.fixture(scope=FIXTURE_SCOPE, name="provider_par_ip")
+def fixture_provider_par_ip():
     """Get Oneprovider 'paris' IP from environment variable."""
-    opip = os.getenv('DEV_ONEPROVIDER_PARIS_0')
-    yield opip
+    return os.getenv("DEV_ONEPROVIDER_PARIS_0")
 
 
-@pytest.fixture(scope=FIXTURE_SCOPE)
-def onezone_admin_token(onezone_ip):
+@pytest.fixture(scope=FIXTURE_SCOPE, name="onezone_admin_token")
+def fixture_onezone_admin_token(onezone_ip):
     """Generate a new client token."""
-    tokens_endpoint = f'https://{onezone_ip}/api/v3/onezone/user/client_tokens'
-    res = requests.post(tokens_endpoint, {},
-                        auth=requests.auth.HTTPBasicAuth('admin', 'password'),
-                        verify=False)
-    return res.json()["token"]
+    result = requests.post(
+        f"https://{onezone_ip}/api/v3/onezone/user/client_tokens",
+        {},
+        auth=requests.auth.HTTPBasicAuth("admin", "password"),
+        verify=False,
+    )
+    return result.json()["token"]
 
 
-@pytest.fixture(scope=FIXTURE_SCOPE)
-def onezone_readonly_token(onezone_ip):
+@pytest.fixture(scope=FIXTURE_SCOPE, name="onezone_readonly_token")
+def fixture_onezone_readonly_token(onezone_ip):
     """Generate new readonly only client token."""
-    temporary_token_path = 'api/v3/onezone/user/tokens/temporary'
-    tokens_endpoint = f'https://{onezone_ip}/{temporary_token_path}'
-    headers = {'content-type': 'application/json'}
-    res = requests.post(tokens_endpoint,
-                        json={
-                            "type": {
-                                "accessToken": {}
-                            },
-                            "caveats": [{
-                                "type": "data.readonly"
-                            }, {
-                                "type": "time",
-                                "validUntil": int(time.time()) + 2592000
-                            }]
-                        },
-                        headers=headers,
-                        auth=requests.auth.HTTPBasicAuth('admin', 'password'),
-                        verify=False)
+    temporary_token_path = "api/v3/onezone/user/tokens/temporary"
+    tokens_endpoint = f"https://{onezone_ip}/{temporary_token_path}"
+    headers = {"content-type": "application/json"}
+    res = requests.post(
+        tokens_endpoint,
+        json={
+            "type": {"accessToken": {}},
+            "caveats": [
+                {"type": "data.readonly"},
+                {"type": "time", "validUntil": int(time.time()) + 2592000},
+            ],
+        },
+        headers=headers,
+        auth=requests.auth.HTTPBasicAuth("admin", "password"),
+        verify=False,
+    )
     return res.json()["token"]

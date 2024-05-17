@@ -133,10 +133,10 @@ if {shed_privileges}:
     os.setregid({gid}, {gid})
     os.setreuid({uid}, {uid})
 
-tests = 'flake8,yapf,mypy,tests'
+tests = 'tests'
 if '{suites}':
     tests = '{suites}'
-    
+
 command = ['python3'] + ['-m'] + ['tox'] +  ['-c'] + ['tox.ini'] + ['-e'] + [tests]
 ret = subprocess.call(command)
 sys.exit(ret)
