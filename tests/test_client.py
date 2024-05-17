@@ -129,7 +129,10 @@ def test_provider_selector(onezone_ip, onezone_admin_token):
     first_choice_provider, second_choice_provider = providers
 
     client = OnedataFileRESTClient(
-        onezone_ip, onezone_admin_token, [first_choice_provider], verify_ssl=False
+        onezone_ip,
+        onezone_admin_token,
+        [_random_provider_specifier(first_choice_provider)],
+        verify_ssl=False,
     )
 
     # pylint: disable=W0212
@@ -516,6 +519,19 @@ def _random_file_selector(file_id, file_path):
         return {"file_id": file_id}
 
     return {"file_path": file_path}
+
+
+def _random_provider_specifier(domain):
+    # return domain if random.choice([True, False]) else _get_provider_id(domain)
+    return _get_provider_id(domain)
+
+
+def _get_provider_id(host: str) -> str:
+    result = requests.get(
+        f"https://{host}/api/v3/oneprovider/configuration",
+        verify=False,
+    )
+    return result.json()["providerId"]
 
 
 @contextmanager

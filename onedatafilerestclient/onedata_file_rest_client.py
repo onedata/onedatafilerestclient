@@ -30,7 +30,7 @@ from .onezone_rest_client import (
     SpaceName,
     SpaceSpecifier,
 )
-from .provider_selector import Provider, ProviderSelector
+from .provider_selector import Provider, ProviderSelector, ProviderSpecifier
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeAlias, TypedDict
@@ -96,7 +96,7 @@ class OnedataFileRESTClient:
         self,
         onezone_host: str,
         token: str,
-        preferred_provider_domains: Optional[List[str]] = None,
+        preferred_providers: Optional[List[ProviderSpecifier]] = None,
         *,
         verify_ssl: bool = True,
     ):
@@ -105,7 +105,7 @@ class OnedataFileRESTClient:
             host=onezone_host, token=token, verify_ssl=verify_ssl
         )
         self._provider_selector = ProviderSelector(
-            preferred_provider_domains=preferred_provider_domains
+            preferred_providers=preferred_providers
         )
 
         self._op_client = HttpClient(verify_ssl=verify_ssl)

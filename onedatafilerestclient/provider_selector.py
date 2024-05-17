@@ -5,12 +5,22 @@ __author__ = "Bartosz Walkowicz"
 __copyright__ = "Copyright (C) 2024 ACK CYFRONET AGH"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
+import sys
 import time
-from typing import Dict, Iterator, List, NamedTuple, Optional
+from typing import Dict, Iterator, List, NamedTuple, Optional, Union
 
 from packaging.version import Version, parse
 
 from .onezone_rest_client import OnezoneRESTClient, ProviderId, SpaceSpecifier
+
+if sys.version_info < (3, 11):
+    from typing_extensions import TypeAlias
+else:
+    from typing import TypeAlias
+
+
+ProviderDomain: TypeAlias = str
+ProviderSpecifier: TypeAlias = Union[ProviderId, ProviderDomain]
 
 
 class Provider(NamedTuple):
@@ -24,7 +34,7 @@ class Provider(NamedTuple):
 class ProviderSelector:
     """Selector responsible for choosing available provider(s) for space."""
 
-    preferred_provider_domains: List[str]
+    preferred_providers: List[str]
 
     _cache_size_limit: int = 512
     _provider_for_space_cache: Dict[SpaceSpecifier, Provider]
@@ -32,10 +42,10 @@ class ProviderSelector:
     _blacklist_time_limit_ns: int = 30 * 10**9  # 30 seconds
 
     def __init__(
-        self, *, preferred_provider_domains: Optional[List[str]] = None
+        self, *, preferred_providers: Optional[List[ProviderSpecifier]] = None
     ) -> None:
         """Construct ProviderSelector instance."""
-        self.preferred_provider_domains = preferred_provider_domains or []
+        self.preferred_providers = preferred_providers or []
         self._provider_blacklist_cache = {}
         self._provider_for_space_cache = {}
 
@@ -112,10 +122,15 @@ class ProviderSelector:
             )
 
             try:
-                index = self.preferred_provider_domains.index(provider.domain)
-                preferred_supporting_providers.append((index, provider))
-            except ValueError:
+                index = next(
+                    i
+                    for i, provider_specifier in enumerate(self.preferred_providers)
+                    if provider_specifier in (provider.id, provider.domain)
+                )
+            except StopIteration:
                 remaining_supporting_providers.append(provider)
+            else:
+                preferred_supporting_providers.append((index, provider))
 
         preferred_supporting_providers.sort()
         supporting_providers = [
