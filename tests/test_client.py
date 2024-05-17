@@ -222,26 +222,22 @@ def test_get_selected_attributes(client: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     # Set min version to lower that testing providers to allow all new attrs
-    with _mock_min_provider_version_supporting_new_file_attrs(
-            Version("20.1.1")):
-        requested_attrs = [
-            attr for attr in random.sample(list(BasicFileAttr), 8)
-            if attr.value.deprecated_key is not None
-        ]
-        requested_attrs.append(
-            BasicFileAttr.ACL
-        )  # append single attr not available in deprecated api
+    with _mock_min_provider_version_supporting_new_file_attrs(Version("20.1.1")):
 
-        space_attrs = client.get_attributes(space_specifier,
-                                            attributes=requested_attrs)
-        exp_attrs = sorted([attr.api_key for attr in requested_attrs])
-        assert exp_attrs == sorted(space_attrs.keys())
+        requested_attr_keys = random.sample(get_args(BasicFileAttrKey), 5)
+        space_attrs = client.get_attributes(
+            space_specifier, attributes=requested_attr_keys
+        )
+        assert sorted(requested_attr_keys) == sorted(space_attrs.keys())
 
     # Set min version to higher that testing providers to disallow new attrs
-    with _mock_min_provider_version_supporting_new_file_attrs(
-            Version("30.1.1")):
+    with _mock_min_provider_version_supporting_new_file_attrs(Version("30.1.1")):
+
+        requested_attr_keys = random.sample(_DEPRECATED_BASIC_FILE_ATTR_KEYS.keys(), 5)
+        requested_attr_keys.append("acl")
+
         with pytest.raises(OnedataRESTError) as exc_info:
-            client.get_attributes(space_specifier, attributes=requested_attrs)
+            client.get_attributes(space_specifier, attributes=requested_attr_keys)
 
             error = exc_info.value
             assert error.http_code == 400
@@ -249,12 +245,14 @@ def test_get_selected_attributes(client: OnedataFileRESTClient):
             assert error.error_details == (
                 "The provider chosen for this space ({domain}) is in version "
                 "({24.02.1}) that does not support the 'BaseFileAttr.ACL' "
-                "attribute (requires Oneprovider version >= 30.1.1)")
+                "attribute (requires Oneprovider version >= 30.1.1)"
+            )
             assert error.description == "einval"
 
-        space_attrs = client.get_attributes(space_specifier,
-                                            attributes=requested_attrs[:-1])
-        exp_attrs = sorted([attr.api_key for attr in requested_attrs[:-1]])
+        space_attrs = client.get_attributes(
+            space_specifier, attributes=requested_attr_keys[:-1]
+        )
+        exp_attrs = sorted(requested_attr_keys[:-1])
         assert exp_attrs == sorted(space_attrs.keys())
 
 

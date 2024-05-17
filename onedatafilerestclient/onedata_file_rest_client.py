@@ -204,7 +204,7 @@ class OnedataFileRESTClient:
             qs += f"&token={continuation_token}"
 
         if not attributes:
-            attributes = [BasicFileAttr.NAME, BasicFileAttr.TYPE]
+            attributes = ["name", "type"]
 
         qs_attrs, body = build_http_get_file_attr_params(provider, attributes)
         if qs_attrs:
@@ -213,7 +213,7 @@ class OnedataFileRESTClient:
         url = self._build_op_url(provider, f"/data/{dir_file_id}/children{qs}")
         result = self._op_client.get(url, data=body).json()
         result["children"] = [
-            sanitize_file_attrs_json(provider, attributes, file_attrs_json)
+            normalize_file_attrs_json(provider, attributes, file_attrs_json)
             for file_attrs_json in result["children"]
         ]
 
