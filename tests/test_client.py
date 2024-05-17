@@ -5,117 +5,121 @@ import os
 import random
 import time
 from contextlib import contextmanager
+from typing import get_args
 
-from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
-from onedatafilerestclient.file_attributes import BasicFileAttr
-
+import requests
 from packaging.version import Version  # type: ignore
 
 import pytest
+from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
+from onedatafilerestclient.errors import (
+    NoAvailableProviderForSpaceError,
+    SpaceNotFoundError,
+)
+from onedatafilerestclient.file_attributes import (
+    _DEPRECATED_BASIC_FILE_ATTR_KEYS,
+    BasicFileAttrKey,
+)
 
-from requests.exceptions import ConnectionError, SSLError
-
-from .common import random_bytes, random_int, random_path, random_str
-
-PROVIDER_KRK_NAME = "dev-oneprovider-krakow"
-PROVIDER_KRK_DOMAIN = "dev-oneprovider-krakow.default.svc.cluster.local"
-PROVIDER_PAR_NAME = "dev-oneprovider-paris"
-PROVIDER_PAR_DOMAIN = "dev-oneprovider-paris.default.svc.cluster.local"
-
-SPACE_KRK_PAR_NAME = "space_krk_par"
-SPACE_PAR_NAME = "space_par"
-SPACE_NO_SUPPORT_NAME = "space_nosupport"
+from . import (
+    PROVIDER_KRK_DOMAIN,
+    PROVIDER_PAR_DOMAIN,
+    SPACE_KRK_PAR_NAME,
+    SPACE_NO_SUPPORT_NAME,
+    SPACE_PAR_NAME,
+)
+from .utils import random_bytes, random_int, random_path, random_str
 
 
-@pytest.fixture
-def client_verifying_ssl(onezone_ip, onezone_admin_token):
+@pytest.fixture(name="client_verifying_ssl")
+def fixture_client_verifying_ssl(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance."""
-    return OnedataFileRESTClient(onezone_ip,
-                                 onezone_admin_token,
-                                 verify_ssl=True)
+    return OnedataFileRESTClient(onezone_ip, onezone_admin_token, verify_ssl=True)
 
 
-@pytest.fixture
-def client(onezone_ip, onezone_admin_token):
+@pytest.fixture(name="client")
+def fixture_client(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance."""
-    return OnedataFileRESTClient(onezone_ip,
-                                 onezone_admin_token,
-                                 verify_ssl=False)
+    return OnedataFileRESTClient(onezone_ip, onezone_admin_token, verify_ssl=False)
 
 
-@pytest.fixture
-def client_ro(onezone_ip, onezone_readonly_token):
+@pytest.fixture(name="client_ro")
+def fixture_client_ro(onezone_ip, onezone_readonly_token):
     """Create readonly OnedataFileRESTClient instance."""
-    return OnedataFileRESTClient(onezone_ip,
-                                 onezone_readonly_token,
-                                 verify_ssl=False)
+    return OnedataFileRESTClient(onezone_ip, onezone_readonly_token, verify_ssl=False)
 
 
-@pytest.fixture
-def client_krakow(onezone_ip, onezone_admin_token):
+@pytest.fixture(name="client_krakow")
+def fixture_client_krakow(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
-    return OnedataFileRESTClient(onezone_ip,
-                                 onezone_admin_token, [PROVIDER_KRK_DOMAIN],
-                                 verify_ssl=False)
+    return OnedataFileRESTClient(
+        onezone_ip, onezone_admin_token, [PROVIDER_KRK_DOMAIN], verify_ssl=False
+    )
 
 
-@pytest.fixture
-def client_ro_krakow(onezone_ip, onezone_readonly_token):
+@pytest.fixture(name="client_ro_krakow")
+def fixture_client_ro_krakow(onezone_ip, onezone_readonly_token):
     """Create readonly OnedataFileRESTClient instance bound to 'krakow'."""
-    return OnedataFileRESTClient(onezone_ip,
-                                 onezone_readonly_token, [PROVIDER_KRK_DOMAIN],
-                                 verify_ssl=False)
+    return OnedataFileRESTClient(
+        onezone_ip, onezone_readonly_token, [PROVIDER_KRK_DOMAIN], verify_ssl=False
+    )
 
 
-@pytest.fixture
-def client_paris(onezone_ip, onezone_admin_token):
+@pytest.fixture(name="client_paris")
+def fixture_client_paris(onezone_ip, onezone_admin_token):
     """Create OnedataFileRESTClient instance bound to 'krakow' provider."""
-    return OnedataFileRESTClient(onezone_ip,
-                                 onezone_admin_token, [PROVIDER_PAR_DOMAIN],
-                                 verify_ssl=False)
+    return OnedataFileRESTClient(
+        onezone_ip, onezone_admin_token, [PROVIDER_PAR_DOMAIN], verify_ssl=False
+    )
 
 
 def test_ssl_verification(client_verifying_ssl: OnedataFileRESTClient):
     """Test 'OnedataFileRESTClient' respects 'verify_ssl' flag."""
-    with pytest.raises(SSLError):
+    with pytest.raises(requests.exceptions.SSLError):
         assert client_verifying_ssl.list_spaces()
 
 
 def test_list_spaces(client: OnedataFileRESTClient):
     """Test 'list_spaces' method."""
-    exp_spaces = sorted([
-        _get_space_fqn(SPACE_KRK_PAR_NAME, client),
-        _get_space_fqn(SPACE_PAR_NAME, client)
-    ])
+    exp_spaces = sorted(
+        [
+            _get_space_fqn(SPACE_KRK_PAR_NAME, client),
+            _get_space_fqn(SPACE_PAR_NAME, client),
+        ]
+    )
 
     assert exp_spaces == sorted(client.list_spaces())
 
 
 def test_get_space_id(onezone_ip, onezone_admin_token):
     """Test 'get_space_id' method."""
-    client = OnedataFileRESTClient(onezone_ip,
-                                   onezone_admin_token, [PROVIDER_KRK_DOMAIN],
-                                   verify_ssl=False)
-    client._oz_client._cache_size_limit = 2
+    client = OnedataFileRESTClient(
+        onezone_ip, onezone_admin_token, [PROVIDER_KRK_DOMAIN], verify_ssl=False
+    )
+    client._oz_client._cache_size_limit = 2  # pylint: disable=W0212
+
+    def get_cache():
+        # pylint: disable=W0212
+        return client._oz_client._space_specifier_to_id
 
     space_krk_id = client.get_space_id(SPACE_KRK_PAR_NAME)
     exp_cache = {SPACE_KRK_PAR_NAME: space_krk_id}
-    assert exp_cache == client._oz_client._space_specifier_to_id
+    assert exp_cache == get_cache()
 
     # space_fqn resolution should not be cached
     space_krk_fqn = f"{SPACE_KRK_PAR_NAME}@{space_krk_id}"
     assert client.get_space_id(space_krk_fqn) == space_krk_id
-    assert exp_cache == client._oz_client._space_specifier_to_id
+    assert exp_cache == get_cache()
 
     space_par_id = client.get_space_id(SPACE_PAR_NAME)
     exp_cache[SPACE_PAR_NAME] = space_par_id
-    assert exp_cache == client._oz_client._space_specifier_to_id
+    assert exp_cache == get_cache()
 
     # with cache size limit set to 2 previous entries should be erased
     # and single new entry created
     space_nosupport_id = client.get_space_id(SPACE_NO_SUPPORT_NAME)
     exp_cache = {SPACE_NO_SUPPORT_NAME: space_nosupport_id}
-    assert exp_cache == client._oz_client._space_specifier_to_id
+    assert exp_cache == get_cache()
 
 
 def test_provider_selector(onezone_ip, onezone_admin_token):
@@ -124,15 +128,17 @@ def test_provider_selector(onezone_ip, onezone_admin_token):
     random.shuffle(providers)
     first_choice_provider, second_choice_provider = providers
 
-    client = OnedataFileRESTClient(onezone_ip,
-                                   onezone_admin_token, [first_choice_provider],
-                                   verify_ssl=False)
+    client = OnedataFileRESTClient(
+        onezone_ip, onezone_admin_token, [first_choice_provider], verify_ssl=False
+    )
 
+    # pylint: disable=W0212
     client._provider_selector._blacklist_time_limit_ns = 1 * 10**9
 
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     def get_selected_provider_domain():
+        # pylint: disable=W0212
         provider = client._select_provider_for_space(space_specifier)
         return provider.domain
 
@@ -154,16 +160,16 @@ def test_provider_selector(onezone_ip, onezone_admin_token):
     # with connection error raised by 'second_choice_provider' there should
     # be no available providers left
     with _mock_http_client_get([second_choice_provider]):
-        with pytest.raises(OnedataRESTError) as exc_info:
+        with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.get_attributes(space_specifier)
 
-        _assert_no_available_provider_error(exc_info.value, space_specifier)
+        assert exc_info.value.args == (space_specifier,)
 
     # even without mock providers should still be blacklisted
-    with pytest.raises(OnedataRESTError) as exc_info:
+    with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
         client.get_attributes(space_specifier)
 
-    _assert_no_available_provider_error(exc_info.value, space_specifier)
+    assert exc_info.value.args == (space_specifier,)
 
     # but after blacklist time ends 'first_choice_provider' should be
     # again selected
@@ -172,22 +178,12 @@ def test_provider_selector(onezone_ip, onezone_admin_token):
     assert get_selected_provider_domain() == first_choice_provider
 
 
-def _assert_no_available_provider_error(error, space_specifier):
-    assert error.http_code == 400
-    assert error.error_category == "posix"
-    assert error.error_details == f"No available provider for space " \
-                                  f"{space_specifier}"
-    assert error.description == "eagain"
-
-
 def test_get_file_id(client: OnedataFileRESTClient):
     """Test 'get_file_id' method."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     file_path = random_path()
-    file_id = client.create_file(space_specifier,
-                                 file_path,
-                                 create_parents=True)
+    file_id = client.create_file(space_specifier, file_path, create_parents=True)
 
     assert file_id == client.get_file_id(space_specifier, file_path)
 
@@ -205,10 +201,8 @@ def test_get_attributes_for_file(client: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     file_path = random_path()
-    file_name = file_path.split("/")[-1]
-    file_id = client.create_file(space_specifier,
-                                 file_path,
-                                 create_parents=True)
+    file_name = file_path.rsplit("/", maxsplit=1)[-1]
+    file_id = client.create_file(space_specifier, file_path, create_parents=True)
     file_selector = _random_file_selector(file_id, file_path)
 
     file_attrs = client.get_attributes(space_specifier, **file_selector)
@@ -261,10 +255,9 @@ def test_set_attributes(client: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     file_path = random_path()
-    file_id = client.create_file(space_specifier,
-                                 file_path,
-                                 mode=0o775,
-                                 create_parents=True)
+    file_id = client.create_file(
+        space_specifier, file_path, mode=0o775, create_parents=True
+    )
     file_selector = _random_file_selector(file_id, file_path)
 
     file_attrs = client.get_attributes(space_specifier, **file_selector)
@@ -289,10 +282,12 @@ def test_list_children(client: OnedataFileRESTClient):
         file_path = os.path.join(dir_path, file_name)
         client.create_file(space_specifier, file_path, create_parents=True)
 
-        exp_children.append({
-            "name": file_name,
-            "type": "REG",
-        })
+        exp_children.append(
+            {
+                "name": file_name,
+                "type": "REG",
+            }
+        )
 
     token = None
     limit = random_int(4, 10)
@@ -301,18 +296,17 @@ def test_list_children(client: OnedataFileRESTClient):
 
     children = []
     while True:
-        result = client.list_children(space_specifier,
-                                      limit=limit,
-                                      continuation_token=token,
-                                      **dir_selector)
+        result = client.list_children(
+            space_specifier, limit=limit, continuation_token=token, **dir_selector
+        )
         children.extend(result["children"])
         if result["isLast"]:
             break
-        else:
-            token = result["nextPageToken"]
+
+        token = result["nextPageToken"]
 
     def sort_files(files):
-        return sorted(files, key=lambda d: d['name'])
+        return sorted(files, key=lambda d: d["name"])
 
     assert sort_files(children) == sort_files(exp_children)
 
@@ -322,53 +316,47 @@ def test_get_file_content(client_krakow: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
 
     file_path = random_path()
-    file_id = client_krakow.create_file(space_specifier,
-                                        file_path,
-                                        create_parents=True)
+    file_id = client_krakow.create_file(space_specifier, file_path, create_parents=True)
     file_selector = _random_file_selector(file_id, file_path)
 
     file_size = 1024
     exp_file_content = random_bytes(file_size)
-    client_krakow.put_file_content(space_specifier, exp_file_content,
-                                   **file_selector)
+    client_krakow.put_file_content(space_specifier, exp_file_content, **file_selector)
 
     assert exp_file_content == client_krakow.get_file_content(
-        space_specifier, **file_selector)
+        space_specifier, **file_selector
+    )
 
     assert exp_file_content[100:300] == client_krakow.get_file_content(
-        space_specifier, offset=100, size=200, **file_selector)
+        space_specifier, offset=100, size=200, **file_selector
+    )
 
 
 def test_get_file_content_with_readonly_token_on_the_same_provider(
-        client_krakow: OnedataFileRESTClient,
-        client_ro_krakow: OnedataFileRESTClient):
+    client_krakow: OnedataFileRESTClient, client_ro_krakow: OnedataFileRESTClient
+):
     """Test 'get_file_content' method using readonly token."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
 
     file_path = random_path()
-    file_id = client_krakow.create_file(space_specifier,
-                                        file_path,
-                                        create_parents=True)
+    file_id = client_krakow.create_file(space_specifier, file_path, create_parents=True)
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
-    client_krakow.put_file_content(space_specifier, file_content,
-                                   **file_selector)
+    client_krakow.put_file_content(space_specifier, file_content, **file_selector)
 
-    assert client_ro_krakow.get_file_content(space_specifier,
-                                             **file_selector) == file_content
+    assert (
+        client_ro_krakow.get_file_content(space_specifier, **file_selector)
+        == file_content
+    )
 
 
 def test_enoent_space(client: OnedataFileRESTClient):
     """Test 'get_file_content' on non-existing space."""
-    with pytest.raises(OnedataRESTError) as exc_info:
+    with pytest.raises(SpaceNotFoundError) as exc_info:
         client.get_file_content("NO_SUCH_SPACE", file_path=random_path())
 
-    e = exc_info.value
-    assert e.http_code == 400
-    assert e.error_category == "posix"
-    assert e.error_details == "Space NO_SUCH_SPACE does not exist"
-    assert e.description == "enoent"
+    assert exc_info.value.args == ("NO_SUCH_SPACE",)
 
 
 def test_enoent_file(client: OnedataFileRESTClient):
@@ -381,9 +369,9 @@ def test_enoent_file(client: OnedataFileRESTClient):
 
     e = exc_info.value
     assert e.http_code == 400
-    assert e.error_category == "posix"
-    assert e.error_details == {"errno": "enoent"}
+    assert e.category == "posix"
     assert e.description == "Operation failed with POSIX error: enoent."
+    assert e.details == {"errno": "enoent"}
 
 
 def test_iter_file_content(client_krakow: OnedataFileRESTClient):
@@ -391,18 +379,16 @@ def test_iter_file_content(client_krakow: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
 
     file_path = random_path()
-    file_id = client_krakow.create_file(space_specifier,
-                                        file_path,
-                                        create_parents=True)
+    file_id = client_krakow.create_file(space_specifier, file_path, create_parents=True)
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
-    client_krakow.put_file_content(space_specifier, file_content,
-                                   **file_selector)
+    client_krakow.put_file_content(space_specifier, file_content, **file_selector)
 
     chunk_size = random_int(4, 100)
-    stream = client_krakow.iter_file_content(space_specifier, chunk_size,
-                                             **file_selector)
+    stream = client_krakow.iter_file_content(
+        space_specifier, chunk_size, **file_selector
+    )
 
     buff = b""
     for chunk in stream:
@@ -417,21 +403,15 @@ def test_put_file_content(client: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     file_path = random_path()
-    file_id = client.create_file(space_specifier,
-                                 file_path,
-                                 create_parents=True)
+    file_id = client.create_file(space_specifier, file_path, create_parents=True)
     file_selector = _random_file_selector(file_id, file_path)
 
     file_size = 100
     rand_bytes = random_bytes(file_size)
-    client.put_file_content(space_specifier,
-                            rand_bytes,
-                            offset=100,
-                            **file_selector)
+    client.put_file_content(space_specifier, rand_bytes, offset=100, **file_selector)
     exp_file_content = 100 * b"\0" + rand_bytes
 
-    assert exp_file_content == client.get_file_content(space_specifier,
-                                                       **file_selector)
+    assert exp_file_content == client.get_file_content(space_specifier, **file_selector)
 
 
 def test_create_file(client: OnedataFileRESTClient):
@@ -439,10 +419,9 @@ def test_create_file(client: OnedataFileRESTClient):
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
     file_path = random_path()
-    file_id = client.create_file(space_specifier,
-                                 file_path,
-                                 file_type="REG",
-                                 create_parents=True)
+    file_id = client.create_file(
+        space_specifier, file_path, file_type="REG", create_parents=True
+    )
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
@@ -450,7 +429,7 @@ def test_create_file(client: OnedataFileRESTClient):
 
     content = client.get_file_content(space_specifier, **file_selector)
 
-    assert (content == file_content)
+    assert content == file_content
 
 
 def test_remove(client: OnedataFileRESTClient):
@@ -459,9 +438,7 @@ def test_remove(client: OnedataFileRESTClient):
 
     dir_path = random_path()
     file_path = os.path.join(dir_path, random_str())
-    file_id = client.create_file(space_specifier,
-                                 file_path,
-                                 create_parents=True)
+    file_id = client.create_file(space_specifier, file_path, create_parents=True)
     file_selector = _random_file_selector(file_id, file_path)
 
     res = client.list_children(space_specifier, file_path=dir_path)
@@ -473,30 +450,28 @@ def test_remove(client: OnedataFileRESTClient):
     assert len(res["children"]) == 0
 
 
-def test_remove_with_readonly_token(client_krakow: OnedataFileRESTClient,
-                                    client_ro_krakow: OnedataFileRESTClient):
+def test_remove_with_readonly_token(
+    client_krakow: OnedataFileRESTClient, client_ro_krakow: OnedataFileRESTClient
+):
     """Test 'remove' method using readonly token."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)
 
     dir_path = random_path()
     file_path = os.path.join(dir_path, random_str())
-    file_id = client_krakow.create_file(space_specifier,
-                                        file_path,
-                                        create_parents=True)
+    file_id = client_krakow.create_file(space_specifier, file_path, create_parents=True)
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
-    client_krakow.put_file_content(space_specifier, file_content,
-                                   **file_selector)
+    client_krakow.put_file_content(space_specifier, file_content, **file_selector)
 
     with pytest.raises(OnedataRESTError) as exc_info:
         client_ro_krakow.remove(space_specifier, **file_selector)
 
     e = exc_info.value
     assert e.http_code == 400
-    assert e.error_category == "posix"
-    assert e.error_details == {"errno": "eacces"}
+    assert e.category == "posix"
     assert e.description == "Operation failed with POSIX error: eacces."
+    assert e.details == {"errno": "eacces"}
 
 
 def test_move(client: OnedataFileRESTClient):
@@ -508,10 +483,9 @@ def test_move(client: OnedataFileRESTClient):
     client.create_file(space_specifier, file_path, create_parents=True)
 
     target_test_dir = random_path()
-    client.create_file(space_specifier,
-                       target_test_dir,
-                       file_type="DIR",
-                       create_parents=True)
+    client.create_file(
+        space_specifier, target_test_dir, file_type="DIR", create_parents=True
+    )
 
     target_file_path = os.path.join(target_test_dir, random_str())
 
@@ -540,12 +514,13 @@ def _get_space_fqn(space_name, client):
 def _random_file_selector(file_id, file_path):
     if random.choice([True, False]):
         return {"file_id": file_id}
-    else:
-        return {"file_path": file_path}
+
+    return {"file_path": file_path}
 
 
 @contextmanager
 def _mock_http_client_get(raise_connection_error_for_provider_domains):
+    # pylint: disable=C0415
     from onedatafilerestclient.httpclient import HttpClient
 
     original_get_method = HttpClient.get
@@ -553,7 +528,7 @@ def _mock_http_client_get(raise_connection_error_for_provider_domains):
     def mock_get(self, url, *args, **kwargs):
         for domain in raise_connection_error_for_provider_domains:
             if domain in url:
-                raise ConnectionError()
+                raise requests.exceptions.ConnectionError()
 
         return original_get_method(self, url, *args, **kwargs)
 
@@ -566,11 +541,15 @@ def _mock_http_client_get(raise_connection_error_for_provider_domains):
 
 @contextmanager
 def _mock_min_provider_version_supporting_new_file_attrs(mock_version):
+    # pylint: disable=C0415
     import onedatafilerestclient.file_attributes as fa
 
+    # pylint: disable=W0212
     original_version = fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION
     try:
+        # pylint: disable=W0212
         fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION = mock_version
         yield
     finally:
+        # pylint: disable=W0212
         fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION = original_version
