@@ -82,6 +82,20 @@ if args.onenv_config is not None:
         print(f'Error: No such one-env file {args.onenv_config}')
         sys.exit(1)
 
+    branch = os.popen('git rev-parse --abbrev-ref HEAD').read().strip()
+    if branch.startswith("release/"):
+        release_tag = branch.split("/", maxsplit=1)[-1]
+
+        with open(args.onenv_config, "r+") as f:
+            content = f.read()
+            for repo in ("onezone-dev", "oneprovider-dev"):
+                develop_image = f"docker.onedata.org/{repo}:develop"
+                release_image = f"docker.onedata.org/{repo}:{release_tag}"
+                content = content.replace(develop_image, release_image)
+            f.seek(0)
+            f.truncate()
+            f.write(content)
+
     try:
         up_output = subprocess.check_output(['./one-env/onenv', 'up', args.onenv_config])
     except subprocess.CalledProcessError as e:

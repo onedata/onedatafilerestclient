@@ -102,6 +102,7 @@ assert_uploaded:
 	$(call print_target)
 	@VERSION=$$(grep "__version__ =" setup.py | sed -E 's/__version__ = "([^\"]+)"/\1/'); \
 	echo "Parsed version: $$VERSION"; \
+	# TODO rm before merge
 	SANITIZED_VERSION=$$($(call docker_run, python3 -c "from packaging.version import Version; print(Version('$$VERSION'))")); \
 	echo "Sanitized version: $$SANITIZED_VERSION"; \
 	$(call docker_run, python3 -m pip install $(PYPI_PACKAGE_NAME)==$$SANITIZED_VERSION) || \
