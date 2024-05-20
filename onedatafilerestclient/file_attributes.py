@@ -15,7 +15,7 @@ from typing import Any, Dict, Final, List, Literal, Optional, Tuple, Union, cast
 from packaging.version import Version
 
 from .errors import OnedataRESTError
-from .provider_selector import Provider
+from .provider_selector import SpaceSupportingProvider
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeAlias, TypedDict
@@ -160,7 +160,7 @@ class FileAttrsJson(TypedDict, total=False):
 
 
 def build_http_get_file_attr_params(
-    provider: Provider, requested_attr_keys: Optional[List[FileAttrKey]]
+    provider: SpaceSupportingProvider, requested_attr_keys: Optional[List[FileAttrKey]]
 ) -> Tuple[Optional[str], Optional[Dict[str, List[str]]]]:
     """Build query string and body for HTTP request to retrieve file attributes.
 
@@ -182,7 +182,9 @@ def build_http_get_file_attr_params(
     return qs, body
 
 
-def _get_deprecated_api_attr_key(provider: Provider, attr_key: FileAttrKey) -> str:
+def _get_deprecated_api_attr_key(
+    provider: SpaceSupportingProvider, attr_key: FileAttrKey
+) -> str:
     deprecated_attr_key = _DEPRECATED_BASIC_FILE_ATTR_KEYS.get(attr_key)
     if deprecated_attr_key is not None:
         return deprecated_attr_key
@@ -198,7 +200,7 @@ def _get_deprecated_api_attr_key(provider: Provider, attr_key: FileAttrKey) -> s
 
 
 def normalize_file_attrs_json(
-    provider: Provider,
+    provider: SpaceSupportingProvider,
     requested_attr_keys: Optional[List[FileAttrKey]],
     file_attrs_json: Dict[str, Any],
 ) -> FileAttrsJson:

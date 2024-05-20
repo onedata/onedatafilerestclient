@@ -176,6 +176,13 @@ class OnezoneRESTClient:
 
         return supported_spaces
 
+    def ensure_space_fqn(self, space_specifier: SpaceSpecifier) -> SpaceFQN:
+        if is_fully_qualified_space_name(space_specifier):
+            return space_specifier
+
+        space_id = self.get_space_id_by_name(space_specifier)
+        return f"{space_specifier}@{space_id}"
+
     def get_space_id(self, space_specifier: SpaceSpecifier) -> SpaceId:
         """Get space id by specifier."""
         if is_fully_qualified_space_name(space_specifier):

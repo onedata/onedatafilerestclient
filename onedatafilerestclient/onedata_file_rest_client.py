@@ -30,7 +30,11 @@ from .onezone_rest_client import (
     SpaceName,
     SpaceSpecifier,
 )
-from .provider_selector import Provider, ProviderSelector, ProviderSpecifier
+from .provider_selector import (
+    ProviderSelector,
+    ProviderSpecifier,
+    SpaceSupportingProvider,
+)
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeAlias, TypedDict
@@ -82,7 +86,9 @@ def _find_available_provider(
         # pylint: disable=W0212
         provider_selector = self._provider_selector
         for provider in provider_selector.iter_available_space_providers(
-            space_specifier, oz_rest_client=self._oz_client
+            space_specifier,
+            oz_rest_client=self._oz_client,
+            except_readonly=except_readonly,
         ):
             try:
                 kwargs["provider"] = provider
@@ -151,7 +157,7 @@ class OnedataFileRESTClient:
         file_path: FilePath,
         *,
         retries: int = 3,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> FileId:
         """Get Onedata file id based on space specifier and file path."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -176,7 +182,7 @@ class OnedataFileRESTClient:
         attributes: Optional[List[FileAttrKey]] = None,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> FileAttrsJson:
         """Get file or directory attributes."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -202,7 +208,7 @@ class OnedataFileRESTClient:
         *,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Set file or directory attributes."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -222,7 +228,7 @@ class OnedataFileRESTClient:
         attributes: Optional[List[FileAttrKey]] = None,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> ListChildrenResult:
         """List contents of a directory."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -258,7 +264,7 @@ class OnedataFileRESTClient:
         size: Optional[int] = None,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> bytes:
         """Read from a file."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -281,7 +287,7 @@ class OnedataFileRESTClient:
         *,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> Iterator[bytes]:
         """Iterate file content."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -300,7 +306,7 @@ class OnedataFileRESTClient:
         offset: Optional[int] = None,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Write to a file."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -321,7 +327,7 @@ class OnedataFileRESTClient:
         file_type: FileType = "REG",
         create_parents: bool = False,
         mode: Optional[int] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> FileId:
         """Create a file at path."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -345,7 +351,7 @@ class OnedataFileRESTClient:
         *,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Remove a file or directory."""
         provider = self._ensure_provider(space_specifier, provider)
@@ -363,7 +369,7 @@ class OnedataFileRESTClient:
         dst_space_name: SpaceName,
         dst_file_path: FilePath,
         *,
-        provider: Optional[Provider] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Rename a file or directory."""
         # First create the target directory (this assumes that the src_file_path
@@ -380,14 +386,18 @@ class OnedataFileRESTClient:
         self._op_client.put(url, data=json.dumps(data), headers=headers)
 
     def _ensure_provider(
-        self, space_specifier: SpaceSpecifier, provider: Optional[Provider]
-    ) -> Provider:
+        self,
+        space_specifier: SpaceSpecifier,
+        provider: Optional[SpaceSupportingProvider],
+    ) -> SpaceSupportingProvider:
         if provider is None:
             provider = self._select_provider_for_space(space_specifier)
 
         return provider
 
-    def _select_provider_for_space(self, space_specifier: SpaceSpecifier) -> Provider:
+    def _select_provider_for_space(
+        self, space_specifier: SpaceSpecifier
+    ) -> SpaceSupportingProvider:
         return next(
             self._provider_selector.iter_available_space_providers(
                 space_specifier, oz_rest_client=self._oz_client
@@ -400,7 +410,7 @@ class OnedataFileRESTClient:
         *,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
-        provider: Provider,
+        provider: SpaceSupportingProvider,
     ) -> FileId:
         if file_id is not None:
             return file_id
@@ -412,7 +422,7 @@ class OnedataFileRESTClient:
         return self.get_space_id(space_specifier)
 
     @staticmethod
-    def _build_op_url(provider: Provider, path: str) -> str:
+    def _build_op_url(provider: SpaceSupportingProvider, path: str) -> str:
         if not path.startswith("/"):
             path = "/" + path
 
