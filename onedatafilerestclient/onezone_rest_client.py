@@ -9,7 +9,7 @@ import sys
 import time
 import typing
 from functools import lru_cache
-from typing import Dict, Final, List, Optional, Tuple, Union
+from typing import Dict, Final, List, Optional, Tuple, Union, cast
 
 from .errors import SpaceNotFoundError
 from .httpclient import HttpClient
@@ -111,9 +111,9 @@ class OnezoneRESTClient:
 
         # lru_cache cannot be used as decorator, as we want to have a separate
         # cache for each OnezoneRESTClient instance
-        self.get_space_id_by_name = lru_cache(maxsize=_SPACE_ID_CACHE_SIZE_LIMIT)(
-            self._get_space_id_by_name
-        )
+        self._get_space_id_by_name_cache = lru_cache(
+            maxsize=_SPACE_ID_CACHE_SIZE_LIMIT
+        )(self._resolve_space_id_by_name)
 
     def __eq__(self, other: object) -> bool:
         """Compare 2 instances of OnezoneRESTClient."""
@@ -135,24 +135,8 @@ class OnezoneRESTClient:
 
     def infer_token_scope(self) -> AccessTokenScope:
         """Get current token access scope."""
-        now = time.time_ns()
-        if (
-            self._token_scope_cache is None
-            or now > self._token_scope_cache_valid_until_ns
-        ):
-            url = self.build_url("/tokens/infer_access_token_scope")
-            result = self._http_client.post(url, {"token": self._token})
-            access_token_scope = typing.cast(AccessTokenScope, result.json())
-
-            if self._token_scope_cache != access_token_scope:
-                # clear case as it is possible that e.g. space name has changed
-                self.get_space_id_by_name.cache_clear()
-
-            valid_until = now + self._token_scope_cache_time_limit_ns
-            self._token_scope_cache = access_token_scope
-            self._token_scope_cache_valid_until_ns = valid_until
-
-        return self._token_scope_cache
+        self._ensure_cached_token_scope_is_up_to_date()
+        return cast(AccessTokenScope, self._token_scope_cache)
 
     def _get_cached_token_scope(self) -> Optional[AccessTokenScope]:
         if time.time_ns() > self._token_scope_cache_valid_until_ns:
@@ -180,7 +164,7 @@ class OnezoneRESTClient:
         if is_fully_qualified_space_name(space_specifier):
             return space_specifier
 
-        space_id = self.get_space_id_by_name(space_specifier)
+        space_id = self._get_space_id_by_name(space_specifier)
         return f"{space_specifier}@{space_id}"
 
     def get_space_id(self, space_specifier: SpaceSpecifier) -> SpaceId:
@@ -189,10 +173,14 @@ class OnezoneRESTClient:
             _, space_id = unpack_fully_qualified_space_name(space_specifier)
             return space_id
 
-        return self.get_space_id_by_name(space_specifier)
+        return self._get_space_id_by_name(space_specifier)
 
     def _get_space_id_by_name(self, space_name: SpaceName) -> SpaceId:
-        """Get space id by name."""
+        # ensure space id cache is invalidated in case of token scope change
+        self._ensure_cached_token_scope_is_up_to_date()
+        return self._get_space_id_by_name_cache(space_name)
+
+    def _resolve_space_id_by_name(self, space_name: SpaceName) -> SpaceId:
         access_token_scope = self.infer_token_scope()
         all_spaces = access_token_scope["dataAccessScope"]["spaces"]
 
@@ -201,6 +189,24 @@ class OnezoneRESTClient:
                 return space_id
 
         raise SpaceNotFoundError(space_name)
+
+    def _ensure_cached_token_scope_is_up_to_date(self) -> None:
+        now = time.time_ns()
+        if (
+            self._token_scope_cache is None
+            or now > self._token_scope_cache_valid_until_ns
+        ):
+            url = self.build_url("/tokens/infer_access_token_scope")
+            result = self._http_client.post(url, {"token": self._token})
+            access_token_scope = typing.cast(AccessTokenScope, result.json())
+
+            if self._token_scope_cache != access_token_scope:
+                # clear case as it is possible that e.g. space name has changed
+                self._get_space_id_by_name_cache.cache_clear()
+
+            valid_until = now + self._token_scope_cache_time_limit_ns
+            self._token_scope_cache = access_token_scope
+            self._token_scope_cache_valid_until_ns = valid_until
 
 
 def is_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:

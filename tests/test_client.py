@@ -1,6 +1,7 @@
 # coding: utf-8
 """Test OnedataFileRESTClient methods."""
 
+import json
 import os
 import random
 import time
@@ -15,6 +16,7 @@ from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 from onedatafilerestclient.errors import (
     NoAvailableProviderForSpaceError,
     SpaceNotFoundError,
+    TokenReadonlyError,
 )
 from onedatafilerestclient.file_attributes import (
     _DEPRECATED_BASIC_FILE_ATTR_KEYS,
@@ -26,6 +28,7 @@ from . import (
     PROVIDER_PAR_DOMAIN,
     SPACE_KRK_PAR_NAME,
     SPACE_PAR_NAME,
+    ZONE_DOMAIN,
 )
 from .utils import random_bytes, random_int, random_path, random_str
 
@@ -97,11 +100,35 @@ def test_get_space_id(onezone_ip, onezone_admin_token):
     )
     client._oz_client._space_id_cache_size_limit = 2  # pylint: disable=W0212
 
-    space_krk_id = client.get_space_id(SPACE_KRK_PAR_NAME)
+    space_par_id = client.get_space_id(SPACE_PAR_NAME)
 
     # space_fqn resolution should not be cached
-    space_krk_fqn = f"{SPACE_KRK_PAR_NAME}@{space_krk_id}"
-    assert client.get_space_id(space_krk_fqn) == space_krk_id
+    space_par_fqn = f"{SPACE_PAR_NAME}@{space_par_id}"
+    assert client.get_space_id(space_par_fqn) == space_par_id
+
+    space_par_new_name = random_str()
+    _rename_space(onezone_admin_token, space_par_id, space_par_new_name)
+
+    try:
+        # changes should not be reflected automatically since token is cached
+        time.sleep(1)
+        assert space_par_id == client.get_space_id(SPACE_PAR_NAME)
+        with pytest.raises(SpaceNotFoundError):
+            client.get_space_id(space_par_new_name)
+
+        # but after cache expires the changes should be reflected
+        time.sleep(2)
+        with pytest.raises(SpaceNotFoundError):
+            client.get_space_id(SPACE_PAR_NAME)
+
+        assert space_par_id == client.get_space_id(space_par_new_name)
+
+        # using fqn returns id from fqn so no resolution is made and old name
+        # still works
+        assert client.get_space_id(space_par_fqn) == space_par_id
+    finally:
+        _rename_space(onezone_admin_token, space_par_id, SPACE_PAR_NAME)
+        time.sleep(3)
 
 
 def test_provider_selector(onezone_ip, onezone_admin_token):
@@ -449,14 +476,8 @@ def test_remove_with_readonly_token(
     file_content = random_bytes(1024)
     client_krakow.put_file_content(space_specifier, file_content, **file_selector)
 
-    with pytest.raises(OnedataRESTError) as exc_info:
+    with pytest.raises(TokenReadonlyError):
         client_ro_krakow.remove(space_specifier, **file_selector)
-
-    e = exc_info.value
-    assert e.http_code == 400
-    assert e.category == "posix"
-    assert e.description == "Operation failed with POSIX error: eacces."
-    assert e.details == {"errno": "eacces"}
 
 
 def test_move(client: OnedataFileRESTClient):
@@ -506,6 +527,16 @@ def _random_file_selector(file_id, file_path):
 def _random_provider_specifier(domain):
     # return domain if random.choice([True, False]) else _get_provider_id(domain)
     return _get_provider_id(domain)
+
+
+def _rename_space(token, space_id, new_name):
+    result = requests.patch(
+        f"https://{ZONE_DOMAIN}/api/v3/onezone/spaces/{space_id}",
+        headers={"X-Auth-Token": token, "Content-type": "application/json"},
+        data=json.dumps({"name": new_name}),
+        verify=False,
+    )
+    result.raise_for_status()
 
 
 def _get_provider_id(host: str) -> str:
