@@ -84,6 +84,8 @@ test-without-clean:
 ## Release
 ##
 
+PYPI_PACKAGE_NAME := onedatafilerestclient
+
 dist:
 	$(call print_target)
 	python3 -m build
@@ -95,3 +97,12 @@ pypi_check: dist
 pypi_upload: pypi_check
 	$(call print_target)
 	python3 -m twine upload --verbose dist/*
+
+assert_uploaded:
+	$(call print_target)
+	@VERSION=$$(grep "__version__ =" setup.py | sed -E 's/__version__ = "([^\"]+)"/\1/'); \
+	echo "Parsed version: $$VERSION"; \
+	SANITIZED_VERSION=$$($(call docker_run, python3 -c "from packaging.version import Version; print(Version('$$VERSION'))")); \
+	echo "Sanitized version: $$SANITIZED_VERSION"; \
+	$(call docker_run, python3 -m pip install $(PYPI_PACKAGE_NAME)==$$SANITIZED_VERSION) || \
+	(echo "Version $$SANITIZED_VERSION of package $(PYPI_PACKAGE_NAME) is NOT available on PyPI."; exit 1)
