@@ -15,6 +15,10 @@ class OnedataError(Exception):
     """Base exception class for Onedata errors."""
 
 
+class TokenReadonlyError(OnedataError):
+    """Exception raised when write operation is called with readonly token."""
+
+
 class SpaceNotFoundError(OnedataError):
     """Exception raised when space is not found in Onedata system."""
 

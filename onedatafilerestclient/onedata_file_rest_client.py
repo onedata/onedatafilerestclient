@@ -8,12 +8,12 @@ __license__ = "This software is released under the MIT license cited in LICENSE.
 import json
 import sys
 import typing
-from functools import wraps
+from functools import partial, wraps
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import requests
 
-from .errors import NoAvailableProviderForSpaceError
+from .errors import NoAvailableProviderForSpaceError, TokenReadonlyError
 from .file_attributes import (
     FileAttrKey,
     FileAttrsJson,
@@ -57,7 +57,12 @@ class ListChildrenResult(TypedDict):
     nextPageToken: Optional[str]
 
 
-def _find_available_provider(func: Callable[..., Any]) -> Callable[..., Any]:
+def _find_available_provider(
+    func: Optional[Callable[..., Any]] = None, *, except_readonly: bool = False
+) -> Callable[..., Any]:
+    if func is None:
+        return partial(_find_available_provider, except_readonly=except_readonly)
+
     @wraps(func)
     def wrapper(
         self: "OnedataFileRESTClient",
@@ -65,6 +70,11 @@ def _find_available_provider(func: Callable[..., Any]) -> Callable[..., Any]:
         *args: Any,
         **kwargs: Any,
     ) -> Any:
+        if except_readonly:
+            access_token_scope = self.get_token_scope()
+            if access_token_scope["dataAccessScope"]["readonly"]:
+                raise TokenReadonlyError
+
         provider = kwargs.get("provider")
         if provider is not None:
             return func(self, space_specifier, *args, **kwargs)
@@ -184,7 +194,7 @@ class OnedataFileRESTClient:
 
         return typing.cast(FileAttrsJson, attrs)
 
-    @_find_available_provider
+    @_find_available_provider(except_readonly=True)
     def set_attributes(
         self,
         space_specifier: SpaceSpecifier,
@@ -281,7 +291,7 @@ class OnedataFileRESTClient:
         url = self._build_op_url(provider, f"/data/{file_id}/content")
         return self._op_client.get(url, stream=True).iter_content(chunk_size)
 
-    @_find_available_provider
+    @_find_available_provider(except_readonly=True)
     def put_file_content(
         self,
         space_specifier: SpaceSpecifier,
@@ -302,7 +312,7 @@ class OnedataFileRESTClient:
         url = self._build_op_url(provider, f"/data/{file_id}/content{qs}")
         self._op_client.put(url, data=data, headers=headers)
 
-    @_find_available_provider
+    @_find_available_provider(except_readonly=True)
     def create_file(
         self,
         space_specifier: SpaceSpecifier,
@@ -328,7 +338,7 @@ class OnedataFileRESTClient:
         result = self._op_client.put(url, b"").json()["fileId"]
         return typing.cast(FileId, result)
 
-    @_find_available_provider
+    @_find_available_provider(except_readonly=True)
     def remove(
         self,
         space_specifier: SpaceSpecifier,
@@ -345,7 +355,7 @@ class OnedataFileRESTClient:
         url = self._build_op_url(provider, f"/data/{file_id}")
         self._op_client.delete(url)
 
-    @_find_available_provider
+    @_find_available_provider(except_readonly=True)
     def move(
         self,
         src_space_name: SpaceName,
