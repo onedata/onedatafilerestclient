@@ -216,14 +216,11 @@ def test_provider_selector_with_readonly_provider(
         space_specifier, client_krakow, client_paris
     )
 
-    # mock token scope so that 'first_choice_provider' has readonly support
     # pylint: disable=W0212
     client._provider_selector._blacklist_time_limit_ns = 1 * 10**9  # 1 second
-    client._oz_client._token_scope_cache_time_limit_ns = 30 * 10**9  # 30 seconds
-    access_token_scope = client.get_token_scope()
-    space_details = access_token_scope["dataAccessScope"]["spaces"][space_id]
-    space_details["supports"][first_choice_provider_id]["readonly"] = True
-    client._oz_client._token_scope_cache = access_token_scope
+
+    # mock token scope so that 'first_choice_provider' has readonly support
+    _patch_provider_readonly_support(client, space_id, first_choice_provider_id)
 
     def get_selected_provider_domain(except_readonly):
         return _get_selected_provider_domain(
@@ -664,6 +661,15 @@ def _get_provider_id(host: str) -> str:
         verify=False,
     )
     return result.json()["providerId"]
+
+
+def _patch_provider_readonly_support(client, space_id, provider_id):
+    # pylint: disable=W0212
+    client._oz_client._token_scope_cache_time_limit_ns = 30 * 10**9  # 30 seconds
+    access_token_scope = client.get_token_scope()
+    space_details = access_token_scope["dataAccessScope"]["spaces"][space_id]
+    space_details["supports"][provider_id]["readonly"] = True
+    client._oz_client._token_scope_cache = access_token_scope
 
 
 @contextmanager

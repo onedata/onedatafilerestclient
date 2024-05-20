@@ -5,6 +5,7 @@ __author__ = "Bartosz Walkowicz"
 __copyright__ = "Copyright (C) 2024 ACK CYFRONET AGH"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
+import logging
 import sys
 import time
 from typing import Dict, Iterator, List, NamedTuple, Optional, Union
@@ -24,6 +25,8 @@ if sys.version_info < (3, 11):
 else:
     from typing import TypeAlias
 
+
+logger = logging.getLogger(__name__)
 
 ProviderDomain: TypeAlias = str
 ProviderSpecifier: TypeAlias = Union[ProviderId, ProviderDomain]
@@ -72,6 +75,10 @@ class ProviderSelector:
     def blacklist(self, provider_id: ProviderId) -> None:
         """Check if specified provider is blacklisted."""
         blacklist_time_end = time.time_ns() + self._blacklist_time_limit_ns
+
+        logger.warning(
+            "Blacklisting provider (id: %s) until %s", provider_id, blacklist_time_end
+        )
 
         if len(self._provider_blacklist_cache) > self._cache_size_limit:
             self._provider_blacklist_cache = {provider_id: blacklist_time_end}
