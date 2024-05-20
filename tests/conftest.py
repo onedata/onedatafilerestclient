@@ -108,7 +108,7 @@ def fixture_onezone_readonly_token(onezone_ip):
             "type": {"accessToken": {}},
             "caveats": [
                 {"type": "data.readonly"},
-                {"type": "time", "validUntil": int(time.time()) + 2592000},
+                {"type": "time", "validUntil": int(time.time()) + 2590000},
             ],
         },
         headers=headers,

@@ -5,6 +5,7 @@ __author__ = "Bartosz Walkowicz"
 __copyright__ = "Copyright (C) 2024 Onedata"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
+import copy
 import sys
 import time
 import typing
@@ -136,16 +137,7 @@ class OnezoneRESTClient:
     def infer_token_scope(self) -> AccessTokenScope:
         """Get current token access scope."""
         self._ensure_cached_token_scope_is_up_to_date()
-        return cast(AccessTokenScope, self._token_scope_cache)
-
-    def _get_cached_token_scope(self) -> Optional[AccessTokenScope]:
-        if time.time_ns() > self._token_scope_cache_valid_until_ns:
-            self._token_scope_cache = None
-
-        return self._token_scope_cache
-
-    def _cache_token_scope(self, access_token_scope: AccessTokenScope) -> None:
-        pass
+        return cast(AccessTokenScope, copy.deepcopy(self._token_scope_cache))
 
     def list_spaces(self) -> List[SpaceFQN]:
         """List all spaces available for the current token."""

@@ -160,7 +160,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> FileId:
         """Get Onedata file id based on space specifier and file path."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         path = f"/lookup-file-id/{space_specifier}/{file_path}"
         url = self._build_op_url(provider, path)
 
@@ -185,7 +185,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> FileAttrsJson:
         """Get file or directory attributes."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
@@ -211,7 +211,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Set file or directory attributes."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
@@ -231,7 +231,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> ListChildrenResult:
         """List contents of a directory."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         dir_file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
@@ -267,7 +267,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> bytes:
         """Read from a file."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
@@ -290,7 +290,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> Iterator[bytes]:
         """Iterate file content."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
@@ -309,7 +309,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Write to a file."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
@@ -330,7 +330,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> FileId:
         """Create a file at path."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         space_id = self.get_space_id(space_specifier)
         parents = str(create_parents).lower()
 
@@ -354,7 +354,7 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Remove a file or directory."""
-        provider = self._ensure_provider(space_specifier, provider)
+        provider = self._ensure_provider(provider)
         file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
@@ -374,7 +374,7 @@ class OnedataFileRESTClient:
         """Rename a file or directory."""
         # First create the target directory (this assumes that the src_file_path
         # already exists)
-        provider = self._ensure_provider(src_space_name, provider)
+        provider = self._ensure_provider(provider)
         headers = {
             "X-CDMI-Specification-Version": "1.1.1",
             "Content-type": "application/cdmi-object",
@@ -385,24 +385,14 @@ class OnedataFileRESTClient:
 
         self._op_client.put(url, data=json.dumps(data), headers=headers)
 
+    @staticmethod
     def _ensure_provider(
-        self,
-        space_specifier: SpaceSpecifier,
         provider: Optional[SpaceSupportingProvider],
     ) -> SpaceSupportingProvider:
         if provider is None:
-            provider = self._select_provider_for_space(space_specifier)
+            raise ValueError("Missing required 'provider' argument.")
 
         return provider
-
-    def _select_provider_for_space(
-        self, space_specifier: SpaceSpecifier
-    ) -> SpaceSupportingProvider:
-        return next(
-            self._provider_selector.iter_available_space_providers(
-                space_specifier, oz_rest_client=self._oz_client
-            )
-        )
 
     def _resolve_file_id(
         self,

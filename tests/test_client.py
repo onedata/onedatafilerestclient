@@ -131,7 +131,9 @@ def test_get_space_id(onezone_ip, onezone_admin_token):
         time.sleep(3)
 
 
-def test_provider_selector(onezone_ip, onezone_admin_token):
+def test_provider_selector(
+    onezone_ip, onezone_admin_token, client_krakow, client_paris
+):
     """Test provider fallback on connection error."""
     providers = [PROVIDER_KRK_DOMAIN, PROVIDER_PAR_DOMAIN]
     random.shuffle(providers)
@@ -148,46 +150,137 @@ def test_provider_selector(onezone_ip, onezone_admin_token):
     client._provider_selector._blacklist_time_limit_ns = 1 * 10**9
 
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+    file_id = _create_and_sync_file_in_space(
+        space_specifier, client_krakow, client_paris
+    )
 
-    def get_selected_provider_domain():
-        # pylint: disable=W0212
-        provider = client._select_provider_for_space(space_specifier)
-        return provider.domain
+    def assert_selected_provider(provider_domain):
+        client.get_attributes(space_specifier, file_id=file_id)
+        assert _get_selected_provider_domain(client, space_specifier) == provider_domain
+
+        random_mode = random.choice(["777", "775", "773", "771", "770"])
+        client.set_attributes(space_specifier, {"mode": random_mode}, file_id=file_id)
+        assert _get_selected_provider_domain(client, space_specifier) == provider_domain
 
     # provider 'first_choice_provider' is chosen with accordance to
     # preferred providers
-    client.get_attributes(space_specifier)
-    assert get_selected_provider_domain() == first_choice_provider
+    assert_selected_provider(first_choice_provider)
 
     # with connection error raised 'first_choice_provider' should be
     # blacklisted for a while and next in line provider
     # - second_choice_provider - should be selected
-    with _mock_http_client_get([first_choice_provider]):
-        client.get_attributes(space_specifier)
-        assert get_selected_provider_domain() == second_choice_provider
+    with _mock_http_client([first_choice_provider]):
+        assert_selected_provider(second_choice_provider)
 
-    client.get_attributes(space_specifier)
-    assert get_selected_provider_domain() == second_choice_provider
+    assert_selected_provider(second_choice_provider)
 
     # with connection error raised by 'second_choice_provider' there should
     # be no available providers left
-    with _mock_http_client_get([second_choice_provider]):
+    with _mock_http_client([second_choice_provider]):
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-            client.get_attributes(space_specifier)
+            client.get_attributes(space_specifier, file_id=file_id)
 
         assert exc_info.value.args == (space_specifier,)
 
     # even without mock providers should still be blacklisted
     with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-        client.get_attributes(space_specifier)
+        client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
 
     assert exc_info.value.args == (space_specifier,)
 
     # but after blacklist time ends 'first_choice_provider' should be
     # again selected
     time.sleep(2)
-    client.get_attributes(space_specifier)
-    assert get_selected_provider_domain() == first_choice_provider
+    assert_selected_provider(first_choice_provider)
+
+
+def test_provider_selector_with_readonly_provider(
+    onezone_ip, onezone_admin_token, client_krakow, client_paris
+):
+    """Test readonly provider fallback on connection error."""
+    providers = [PROVIDER_KRK_DOMAIN, PROVIDER_PAR_DOMAIN]
+    random.shuffle(providers)
+    first_choice_provider, second_choice_provider = providers
+    first_choice_provider_id = _get_provider_id(first_choice_provider)
+
+    client = OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        [_random_provider_specifier(first_choice_provider)],
+        verify_ssl=False,
+    )
+
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+    space_id = client.get_space_id(space_specifier)
+    file_id = _create_and_sync_file_in_space(
+        space_specifier, client_krakow, client_paris
+    )
+
+    # mock token scope so that 'first_choice_provider' has readonly support
+    # pylint: disable=W0212
+    client._provider_selector._blacklist_time_limit_ns = 1 * 10**9  # 1 second
+    client._oz_client._token_scope_cache_time_limit_ns = 30 * 10**9  # 30 seconds
+    access_token_scope = client.get_token_scope()
+    space_details = access_token_scope["dataAccessScope"]["spaces"][space_id]
+    space_details["supports"][first_choice_provider_id]["readonly"] = True
+    client._oz_client._token_scope_cache = access_token_scope
+
+    def get_selected_provider_domain(except_readonly):
+        return _get_selected_provider_domain(
+            client, space_specifier, except_readonly=except_readonly
+        )
+
+    def assert_selected_provider(read_provider_domain, write_provider_domain=None):
+        client.get_attributes(space_specifier, file_id=file_id)
+        assert get_selected_provider_domain(False) == read_provider_domain
+
+        if write_provider_domain is None:
+            write_provider_domain = read_provider_domain
+        random_mode = random.choice(["777", "775", "773", "771", "770"])
+        client.set_attributes(space_specifier, {"mode": random_mode}, file_id=file_id)
+        assert get_selected_provider_domain(True) == write_provider_domain
+
+    # provider 'first_choice_provider' is chosen with accordance to
+    # preferred providers but only for read (readonly support)
+    assert_selected_provider(first_choice_provider, second_choice_provider)
+
+    # with connection error raised 'first_choice_provider' should be
+    # blacklisted for a while and next in line provider
+    # - second_choice_provider - should be selected
+    with _mock_http_client([first_choice_provider]):
+        assert_selected_provider(second_choice_provider)
+
+    assert_selected_provider(second_choice_provider)
+
+    # with connection error raised by 'second_choice_provider' there should
+    # be no available providers left
+    with _mock_http_client([second_choice_provider]):
+        with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
+            client.get_attributes(space_specifier, file_id=file_id)
+
+        assert exc_info.value.args == (space_specifier,)
+
+    # even without mock providers should still be blacklisted
+    with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
+        client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
+
+    assert exc_info.value.args == (space_specifier,)
+
+    # but after blacklist time ends 'first_choice_provider' should be
+    # again selected for read and 'second_choice_provider' for write
+    time.sleep(2)
+    assert_selected_provider(first_choice_provider, second_choice_provider)
+
+    # with connection error raised by 'second_choice_provider' there should
+    # be no available providers for write but read should still work
+    with _mock_http_client([second_choice_provider]):
+        with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
+            client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
+
+        assert exc_info.value.args == (space_specifier,)
+
+    client.get_attributes(space_specifier, file_id=file_id)
+    assert get_selected_provider_domain(False) == first_choice_provider
 
 
 def test_get_file_id(client: OnedataFileRESTClient):
@@ -529,6 +622,32 @@ def _random_provider_specifier(domain):
     return _get_provider_id(domain)
 
 
+def _get_selected_provider_domain(client, space_specifier, *, except_readonly=False):
+    # pylint: disable=W0212
+    oz_client = client._oz_client
+    provider = next(
+        client._provider_selector.iter_available_space_providers(
+            space_specifier, oz_rest_client=oz_client, except_readonly=except_readonly
+        )
+    )
+    return provider.domain
+
+
+def _create_and_sync_file_in_space(space_specifier, client_krakow, client_paris):
+    file_id = client_krakow.create_file(
+        space_specifier, random_str(), create_parents=True
+    )
+    for _ in range(10):
+        result = client_paris.list_children(space_specifier, attributes=["fileId"])
+        if {"fileId": file_id} in result["children"]:
+            break
+        time.sleep(1)
+    else:
+        assert False, "Failed to create and sync file between providers"
+
+    return file_id
+
+
 def _rename_space(token, space_id, new_name):
     result = requests.patch(
         f"https://{ZONE_DOMAIN}/api/v3/onezone/spaces/{space_id}",
@@ -548,24 +667,27 @@ def _get_provider_id(host: str) -> str:
 
 
 @contextmanager
-def _mock_http_client_get(raise_connection_error_for_provider_domains):
+def _mock_http_client(raise_connection_error_for_provider_domains):
     # pylint: disable=C0415
     from onedatafilerestclient.httpclient import HttpClient
 
-    original_get_method = HttpClient.get
+    # pylint: disable=W0212
+    original_send_request_method = HttpClient._send_request
 
-    def mock_get(self, url, *args, **kwargs):
+    def mock_send_request(self, method, url, *args, **kwargs):
         for domain in raise_connection_error_for_provider_domains:
             if domain in url:
                 raise requests.exceptions.ConnectionError()
 
-        return original_get_method(self, url, *args, **kwargs)
+        return original_send_request_method(self, method, url, *args, **kwargs)
 
     try:
-        HttpClient.get = mock_get
+        # pylint: disable=W0212
+        HttpClient._send_request = mock_send_request
         yield
     finally:
-        HttpClient.get = original_get_method
+        # pylint: disable=W0212
+        HttpClient._send_request = original_send_request_method
 
 
 @contextmanager
