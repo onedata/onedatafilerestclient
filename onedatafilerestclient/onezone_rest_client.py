@@ -143,8 +143,12 @@ class OnezoneRESTClient:
             url = self.build_url("/tokens/infer_access_token_scope")
             result = self._http_client.post(url, {"token": self._token})
             access_token_scope = typing.cast(AccessTokenScope, result.json())
-            valid_until = now + self._token_scope_cache_time_limit_ns
 
+            if self._token_scope_cache != access_token_scope:
+                # clear case as it is possible that e.g. space name has changed
+                self.get_space_id_by_name.cache_clear()
+
+            valid_until = now + self._token_scope_cache_time_limit_ns
             self._token_scope_cache = access_token_scope
             self._token_scope_cache_valid_until_ns = valid_until
 
@@ -167,7 +171,7 @@ class OnezoneRESTClient:
         supported_spaces = [
             f'{space_details["name"]}@{space_id}'
             for space_id, space_details in all_spaces.items()
-            if is_space_supported(space_details)
+            if _is_space_supported(space_details)
         ]
 
         return supported_spaces
@@ -203,6 +207,6 @@ def unpack_fully_qualified_space_name(space_fqn: SpaceFQN) -> Tuple[SpaceName, S
     return space_name, space_id
 
 
-def is_space_supported(space_details: SpaceDetails) -> bool:
+def _is_space_supported(space_details: SpaceDetails) -> bool:
     """Check if space is supported."""
     return "supports" in space_details and bool(space_details["supports"])
