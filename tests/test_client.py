@@ -280,6 +280,27 @@ def test_provider_selector_with_readonly_provider(
     assert get_selected_provider_domain(False) == first_choice_provider
 
 
+def test_provider_selector_with_offline_provider(onezone_ip, onezone_admin_token):
+    """Test offline provider should be omitted."""
+    providers = [PROVIDER_KRK_DOMAIN, PROVIDER_PAR_DOMAIN]
+    random.shuffle(providers)
+    first_choice_provider, second_choice_provider = providers
+    first_choice_provider_id = _get_provider_id(first_choice_provider)
+
+    client = OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        [_random_provider_specifier(first_choice_provider)],
+        verify_ssl=False,
+    )
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    _patch_provider_offline(client, first_choice_provider_id)
+
+    client.get_attributes(space_specifier)
+    assert _get_selected_provider_domain(client, space_specifier) == second_choice_provider
+
+
 def test_get_file_id(client: OnedataFileRESTClient):
     """Test 'get_file_id' method."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
@@ -669,6 +690,14 @@ def _patch_provider_readonly_support(client, space_id, provider_id):
     access_token_scope = client.get_token_scope()
     space_details = access_token_scope["dataAccessScope"]["spaces"][space_id]
     space_details["supports"][provider_id]["readonly"] = True
+    client._oz_client._token_scope_cache = access_token_scope
+
+
+def _patch_provider_offline(client, provider_id):
+    # pylint: disable=W0212
+    client._oz_client._token_scope_cache_time_limit_ns = 30 * 10**9  # 30 seconds
+    access_token_scope = client.get_token_scope()
+    access_token_scope["dataAccessScope"]["providers"][provider_id]["online"] = False
     client._oz_client._token_scope_cache = access_token_scope
 
 
