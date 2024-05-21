@@ -298,7 +298,9 @@ def test_provider_selector_with_offline_provider(onezone_ip, onezone_admin_token
     _patch_provider_offline(client, first_choice_provider_id)
 
     client.get_attributes(space_specifier)
-    assert _get_selected_provider_domain(client, space_specifier) == second_choice_provider
+    assert (
+        _get_selected_provider_domain(client, space_specifier) == second_choice_provider
+    )
 
 
 def test_get_file_id(client: OnedataFileRESTClient):
