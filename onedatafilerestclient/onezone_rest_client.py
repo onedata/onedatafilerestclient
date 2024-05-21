@@ -183,20 +183,19 @@ class OnezoneRESTClient:
         raise SpaceNotFoundError(space_name)
 
     def _ensure_cached_token_scope_is_up_to_date(self) -> None:
-        now = time.time_ns()
         if (
             self._token_scope_cache is None
-            or now > self._token_scope_cache_valid_until_ns
+            or time.time_ns() > self._token_scope_cache_valid_until_ns
         ):
             url = self.build_url("/tokens/infer_access_token_scope")
             result = self._http_client.post(url, {"token": self._token})
             access_token_scope = typing.cast(AccessTokenScope, result.json())
 
             if self._token_scope_cache != access_token_scope:
-                # clear case as it is possible that e.g. space name has changed
+                # clear cache as it is possible that e.g. space name has changed
                 self._get_space_id_by_name_cache.cache_clear()
 
-            valid_until = now + self._token_scope_cache_time_limit_ns
+            valid_until = time.time_ns() + self._token_scope_cache_time_limit_ns
             self._token_scope_cache = access_token_scope
             self._token_scope_cache_valid_until_ns = valid_until
 

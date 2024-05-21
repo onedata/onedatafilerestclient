@@ -28,7 +28,7 @@ _PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION: Final[Version] = Version("21.0
 _NOT_SUPPORTED_ATTR_ERROR_DETAILS_FMT: Final[str] = (
     "The provider chosen for this space ({domain}) is in version ({version}) "
     "that does not support the '{attr}' attribute (requires Oneprovider "
-    f"version >= {_PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION})"
+    "version >= {min_required_version})"
 )
 
 BasicFileAttrKey: TypeAlias = Literal[
@@ -194,7 +194,10 @@ def _get_deprecated_api_attr_key(
         category="posix",
         description="einval",
         details=_NOT_SUPPORTED_ATTR_ERROR_DETAILS_FMT.format(
-            domain=provider.domain, version=provider.version, attr=attr_key
+            domain=provider.domain,
+            version=provider.version,
+            attr=attr_key,
+            min_required_version=_PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION,
         ),
     )
 

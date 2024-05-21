@@ -117,7 +117,7 @@ def test_get_space_id(onezone_ip, onezone_admin_token):
             client.get_space_id(space_par_new_name)
 
         # but after cache expires the changes should be reflected
-        time.sleep(2)
+        time.sleep(3)
         with pytest.raises(SpaceNotFoundError):
             client.get_space_id(SPACE_PAR_NAME)
 
@@ -156,11 +156,11 @@ def test_provider_selector(
 
     def assert_selected_provider(provider_domain):
         client.get_attributes(space_specifier, file_id=file_id)
-        assert _get_selected_provider_domain(client, space_specifier) == provider_domain
+        assert _get_selected_provider(client, space_specifier).domain == provider_domain
 
         random_mode = random.choice(["777", "775", "773", "771", "770"])
         client.set_attributes(space_specifier, {"mode": random_mode}, file_id=file_id)
-        assert _get_selected_provider_domain(client, space_specifier) == provider_domain
+        assert _get_selected_provider(client, space_specifier).domain == provider_domain
 
     # provider 'first_choice_provider' is chosen with accordance to
     # preferred providers
@@ -223,9 +223,9 @@ def test_provider_selector_with_readonly_provider(
     _patch_provider_readonly_support(client, space_id, first_choice_provider_id)
 
     def get_selected_provider_domain(except_readonly):
-        return _get_selected_provider_domain(
+        return _get_selected_provider(
             client, space_specifier, except_readonly=except_readonly
-        )
+        ).domain
 
     def assert_selected_provider(read_provider_domain, write_provider_domain=None):
         client.get_attributes(space_specifier, file_id=file_id)
@@ -299,7 +299,7 @@ def test_provider_selector_with_offline_provider(onezone_ip, onezone_admin_token
 
     client.get_attributes(space_specifier)
     assert (
-        _get_selected_provider_domain(client, space_specifier) == second_choice_provider
+        _get_selected_provider(client, space_specifier).domain == second_choice_provider
     )
 
 
@@ -350,23 +350,23 @@ def test_get_selected_attributes(client: OnedataFileRESTClient):
         assert sorted(requested_attr_keys) == sorted(space_attrs.keys())
 
     # Set min version to higher that testing providers to disallow new attrs
-    with _mock_min_provider_version_supporting_new_file_attrs(Version("30.1.1")):
-
+    with _mock_min_provider_version_supporting_new_file_attrs(Version("300.1.1")):
         requested_attr_keys = random.sample(_DEPRECATED_BASIC_FILE_ATTR_KEYS.keys(), 5)
         requested_attr_keys.append("acl")
 
         with pytest.raises(OnedataRESTError) as exc_info:
             client.get_attributes(space_specifier, attributes=requested_attr_keys)
 
-            error = exc_info.value
-            assert error.http_code == 400
-            assert error.error_category == "posix"
-            assert error.error_details == (
-                "The provider chosen for this space ({domain}) is in version "
-                "({24.02.1}) that does not support the 'BaseFileAttr.ACL' "
-                "attribute (requires Oneprovider version >= 30.1.1)"
-            )
-            assert error.description == "einval"
+        selected_provider = _get_selected_provider(client, space_specifier)
+        error = exc_info.value
+        assert error.http_code == 400
+        assert error.category == "posix"
+        assert error.details == (
+            f"The provider chosen for this space ({selected_provider.domain}) is in version "
+            f"({selected_provider.version}) that does not support the 'acl' "
+            "attribute (requires Oneprovider version >= 300.1.1)"
+        )
+        assert error.description == "einval"
 
         space_attrs = client.get_attributes(
             space_specifier, attributes=requested_attr_keys[:-1]
@@ -642,7 +642,7 @@ def _random_provider_specifier(domain):
     return _get_provider_id(domain)
 
 
-def _get_selected_provider_domain(client, space_specifier, *, except_readonly=False):
+def _get_selected_provider(client, space_specifier, *, except_readonly=False):
     # pylint: disable=W0212
     oz_client = client._oz_client
     provider = next(
@@ -650,7 +650,7 @@ def _get_selected_provider_domain(client, space_specifier, *, except_readonly=Fa
             space_specifier, oz_rest_client=oz_client, except_readonly=except_readonly
         )
     )
-    return provider.domain
+    return provider
 
 
 def _create_and_sync_file_in_space(space_specifier, client_krakow, client_paris):

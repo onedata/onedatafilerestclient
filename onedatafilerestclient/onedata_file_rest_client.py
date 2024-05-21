@@ -97,7 +97,7 @@ def _find_available_provider(
                 kwargs["provider"] = provider
                 return func(self, space_specifier, *args, **kwargs)
             except requests.exceptions.ConnectionError:
-                provider_selector.blacklist(provider.id)
+                provider_selector.blacklist(provider)
 
         raise NoAvailableProviderForSpaceError(space_specifier)
 

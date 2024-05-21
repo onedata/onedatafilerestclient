@@ -72,18 +72,21 @@ class ProviderSelector:
         del self._provider_blacklist_cache[provider_id]
         return False
 
-    def blacklist(self, provider_id: ProviderId) -> None:
+    def blacklist(self, provider: SpaceSupportingProvider) -> None:
         """Check if specified provider is blacklisted."""
         blacklist_time_end = time.time_ns() + self._blacklist_time_limit_ns
 
-        logger.warning(
-            "Blacklisting provider (id: %s) until %s", provider_id, blacklist_time_end
+        logger.debug(
+            "Blacklisting provider '%s' (id: %s) until %s",
+            provider.id,
+            provider.domain,
+            blacklist_time_end,
         )
 
         if len(self._provider_blacklist_cache) > self._cache_size_limit:
-            self._provider_blacklist_cache = {provider_id: blacklist_time_end}
+            self._provider_blacklist_cache = {provider.id: blacklist_time_end}
         else:
-            self._provider_blacklist_cache[provider_id] = blacklist_time_end
+            self._provider_blacklist_cache[provider.id] = blacklist_time_end
 
     def iter_available_space_providers(
         self,
@@ -92,7 +95,7 @@ class ProviderSelector:
         oz_rest_client: OnezoneRESTClient,
         except_readonly: bool = False,
     ) -> Iterator[SpaceSupportingProvider]:
-        """Iterate over online and not not blacklisted space providers."""
+        """Iterate over online and not blacklisted space providers."""
         space_fqn = oz_rest_client.ensure_space_fqn(space_specifier)
 
         cache_key = space_fqn
