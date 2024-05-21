@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, Optional
 
 import requests
+from requests.structures import CaseInsensitiveDict
 
 from .errors import OnedataRESTError
 
@@ -44,12 +45,11 @@ class HttpClient:
         else:
             body = data
 
-        if headers is None:
-            headers = {}
-        if "Content-type" not in headers:
-            headers["Content-type"] = "application/json"
+        case_insensitive_headers = CaseInsensitiveDict(headers)
+        if "content-type" not in case_insensitive_headers:
+            case_insensitive_headers["content-type"] = "application/json"
 
-        req = requests.Request(method, url, data=body, headers=headers)
+        req = requests.Request(method, url, data=body, headers=case_insensitive_headers)
         prepared = self.session.prepare_request(req)
         response = self.session.send(prepared, stream=stream, timeout=self.timeout)
 
