@@ -22,21 +22,23 @@ CLASSIFIERS = [
 with open("README.md", "rt") as f:
     DESCRIPTION = f.read()
 
-REQUIREMENTS = ["requests"]
+with open("requirements.txt", "r") as f:
+    REQUIREMENTS = [line.strip() for line in f]
 
 setup(
     name="onedatafilerestclient",
-    author="Bartek Kryza",
-    author_email="bkryza@gmail.com",
-    classifiers=CLASSIFIERS,
+    version=__version__,
     description="Onedata REST file API client",
-    install_requires=REQUIREMENTS,
-    license="MIT",
     long_description=DESCRIPTION,
     long_description_content_type="text/markdown",
+    author="Bartek Kryza",
+    author_email="bkryza@gmail.com",
+    license="MIT",
+    classifiers=CLASSIFIERS,
+    python_requires=">=3.8",
+    install_requires=REQUIREMENTS,
     packages=["onedatafilerestclient"],
     keywords=["Onedata"],
     test_suite="nose.collector",
     url="https://github.com/onedata/onedatafilerestclient",
-    version=__version__,
 )
