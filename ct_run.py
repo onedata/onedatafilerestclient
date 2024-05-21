@@ -44,14 +44,6 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--release",
-    action="store",
-    default="release",
-    help="release directory to run tests from",
-    dest="release",
-)
-
-parser.add_argument(
     "--suite", action="append", default=[], help="name of the test suite", dest="suites"
 )
 
@@ -64,7 +56,7 @@ parser.add_argument(
 )
 
 
-[args, pass_args] = parser.parse_known_args()
+[args, _pass_args] = parser.parse_known_args()
 dockers_config.ensure_image(args, "image", "builder")
 
 
@@ -169,13 +161,10 @@ ret = subprocess.call(command)
 sys.exit(ret)
 """
 command = command.format(
-    args=pass_args,
     uid=os.geteuid(),
     gid=os.getegid(),
     shed_privileges=(platform.system() == "Linux") and not args.no_shed_privileges,
     suites=",".join(args.suites),
-    script_dir=script_dir,
-    release=args.release,
 )
 
 ret = docker.run(
@@ -183,7 +172,8 @@ ret = docker.run(
     rm=True,
     interactive=True,
     workdir=script_dir,
-    reflect=[(script_dir, "rw"), ("/var/run/docker.sock", "rw")],
+    volumes=[(script_dir, script_dir, "rw")],
+    reflect=[("/var/run/docker.sock", "rw")],
     image=args.image,
     envs=envs,
     run_params=["--privileged"] if args.no_shed_privileges else [],

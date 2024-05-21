@@ -22,8 +22,7 @@ CLASSIFIERS = [
 with open("README.md", "rt") as f:
     DESCRIPTION = f.read()
 
-with open("requirements.txt", "r") as f:
-    REQUIREMENTS = [line.strip() for line in f]
+REQUIREMENTS = ["packaging", "requests", "typing-extensions==4.3.0"]
 
 setup(
     name="onedatafilerestclient",
