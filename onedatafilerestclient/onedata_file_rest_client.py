@@ -1,9 +1,7 @@
 # coding: utf-8
 """Onedata REST file API client."""
 
-__author__ = "Bartek Kryza"
-__copyright__ = "Copyright (C) 2023 Onedata"
-__license__ = "This software is released under the MIT license cited in LICENSE.txt"
+from __future__ import annotations
 
 import json
 import sys
@@ -13,7 +11,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import requests
 
-from .errors import NoAvailableProviderForSpaceError, TokenReadonlyError
+from .errors import NoAvailableProviderForSpaceError, ReadonlyTokenError
 from .file_attributes import (
     FileAttrKey,
     FileAttrsJson,
@@ -35,6 +33,11 @@ from .provider_selector import (
     ProviderSpecifier,
     SpaceSupportingProvider,
 )
+
+__author__ = "Bartek Kryza"
+__copyright__ = "Copyright (C) 2023 Onedata"
+__license__ = "This software is released under the MIT license cited in LICENSE.txt"
+
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeAlias, TypedDict
@@ -69,7 +72,7 @@ def _find_available_provider(
 
     @wraps(func)
     def wrapper(
-        self: "OnedataFileRESTClient",
+        self: OnedataFileRESTClient,
         space_specifier: SpaceSpecifier,
         *args: Any,
         **kwargs: Any,
@@ -77,7 +80,7 @@ def _find_available_provider(
         if except_readonly:
             access_token_scope = self.get_token_scope()
             if access_token_scope["dataAccessScope"]["readonly"]:
-                raise TokenReadonlyError
+                raise ReadonlyTokenError
 
         provider = kwargs.get("provider")
         if provider is not None:

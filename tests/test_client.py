@@ -15,8 +15,8 @@ import pytest
 from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 from onedatafilerestclient.errors import (
     NoAvailableProviderForSpaceError,
+    ReadonlyTokenError,
     SpaceNotFoundError,
-    TokenReadonlyError,
 )
 from onedatafilerestclient.file_attributes import (
     _DEPRECATED_BASIC_FILE_ATTR_KEYS,
@@ -589,7 +589,7 @@ def test_remove_with_readonly_token(
     file_content = random_bytes(1024)
     client_krakow.put_file_content(space_specifier, file_content, **file_selector)
 
-    with pytest.raises(TokenReadonlyError):
+    with pytest.raises(ReadonlyTokenError):
         client_ro_krakow.remove(space_specifier, **file_selector)
 
 
