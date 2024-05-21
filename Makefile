@@ -1,7 +1,7 @@
 .PHONY: submodules venv init format black-check static-analysis type-check lint test-with-clean test-without-clean dist pypi_check pypi_upload
 
 STATIC_ANALYSER_IMAGE := "docker.onedata.org/python_static_analyser:v7"
-SRC_FILES := onedatafilerestclient/ tests/
+SRC_FILES := onedatafilerestclient/ tests/ setup.py
 
 define docker_run
 	docker run --rm -i -v $(CURDIR):$(CURDIR) -w $(CURDIR) $(STATIC_ANALYSER_IMAGE) $1
