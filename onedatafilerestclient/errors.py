@@ -102,4 +102,15 @@ class OnedataRESTError(OnedataError):
 
     def __str__(self) -> str:
         """Describe error reason."""
-        return f"HTTP {self.http_code} [{self.category}] {self.description}\n\n{self.details}"
+        msg = f"HTTP {self.http_code}"
+
+        if self.category:
+            msg += f" [{self.category}]"
+
+        if self.description:
+            msg += f" {self.description}"
+
+        if self.details:
+            msg += f" ({self.details})"
+
+        return msg
