@@ -18,3 +18,8 @@ PROVIDER_PAR_DOMAIN: Final[str] = "dev-oneprovider-paris.default.svc.cluster.loc
 SPACE_KRK_PAR_NAME: Final[str] = "space_krk_par"
 SPACE_PAR_NAME: Final[str] = "space_par"
 SPACE_NO_SUPPORT_NAME: Final[str] = "space_nosupport"
+
+ADMIN_USERNAME: Final[str] = "admin"
+ADMIN_PASSWORD: Final[str] = "password"
+SPACE_MEMBER_USERNAME: Final[str] = "space_member"
+SPACE_MEMBER_PASSWORD: Final[str] = "password"

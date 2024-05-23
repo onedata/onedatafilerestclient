@@ -15,7 +15,15 @@ from urllib3.util import connection
 
 import pytest
 
-from . import PROVIDER_KRK_DOMAIN, PROVIDER_PAR_DOMAIN, ZONE_DOMAIN
+from . import (
+    ADMIN_PASSWORD,
+    ADMIN_USERNAME,
+    PROVIDER_KRK_DOMAIN,
+    PROVIDER_PAR_DOMAIN,
+    SPACE_MEMBER_PASSWORD,
+    SPACE_MEMBER_USERNAME,
+    ZONE_DOMAIN,
+)
 
 
 def trace_requests_messages() -> None:
@@ -90,7 +98,7 @@ def fixture_onezone_admin_token(onezone_ip):
     result = requests.post(
         f"https://{onezone_ip}/api/v3/onezone/user/client_tokens",
         {},
-        auth=requests.auth.HTTPBasicAuth("admin", "password"),
+        auth=requests.auth.HTTPBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD),
         verify=False,
     )
     return result.json()["token"]
@@ -112,7 +120,19 @@ def fixture_onezone_readonly_token(onezone_ip):
             ],
         },
         headers=headers,
-        auth=requests.auth.HTTPBasicAuth("admin", "password"),
+        auth=requests.auth.HTTPBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD),
         verify=False,
     )
     return res.json()["token"]
+
+
+@pytest.fixture(scope=FIXTURE_SCOPE, name="onezone_space_member_token")
+def fixture_space_member_token(onezone_ip):
+    """Generate a new client token."""
+    result = requests.post(
+        f"https://{onezone_ip}/api/v3/onezone/user/client_tokens",
+        {},
+        auth=requests.auth.HTTPBasicAuth(SPACE_MEMBER_USERNAME, SPACE_MEMBER_PASSWORD),
+        verify=False,
+    )
+    return result.json()["token"]

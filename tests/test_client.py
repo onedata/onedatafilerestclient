@@ -499,6 +499,33 @@ def test_enoent_file(client: OnedataFileRESTClient):
     assert e.details == {"errno": "enoent"}
 
 
+def test_eacces_file(onezone_ip, onezone_space_member_token):
+    """Test 'get_file_content' on non-existing file."""
+    client = OnedataFileRESTClient(
+        onezone_ip, onezone_space_member_token, verify_ssl=False
+    )
+
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+
+    file_path = random_path()
+    file_id = client.create_file(space_specifier, file_path, create_parents=True)
+    file_selector = _random_file_selector(file_id, file_path)
+
+    client.set_attributes(space_specifier, {"mode": "000"}, **file_selector)
+
+    print(_get_selected_provider(client, space_specifier).domain)
+    with pytest.raises(OnedataRESTError) as exc_info:
+        file_content = random_bytes(1024)
+        client.put_file_content(space_specifier, file_content, **file_selector)
+        print(_get_selected_provider(client, space_specifier).domain)
+
+    e = exc_info.value
+    assert e.http_code == 400
+    assert e.category == "posix"
+    assert e.description == "Operation failed with POSIX error: eacces."
+    assert e.details == {"errno": "eacces"}
+
+
 def test_iter_file_content(client_krakow: OnedataFileRESTClient):
     """Test 'iter_file_content' method."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_krakow)

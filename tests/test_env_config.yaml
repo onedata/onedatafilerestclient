@@ -50,8 +50,15 @@ openfaas: false
 # space configuration please refer to one of MyValues.yaml file in
 # scenario directory.
 
+users:
+  - &space_member
+    name: space_member
+    password: password
+
 spaces:
   - name: space_krk_par
+    users:
+      - user: *space_member
     supports:
       - provider: oneprovider-1
         storage_name: 'ceph'
@@ -60,12 +67,16 @@ spaces:
         storage_name: 'posix'
         size: '100000000' # in bytes
   - name: space_par
+    users:
+      - user: *space_member
     supports:
       - provider: oneprovider-2
         storage_name: 's3'
         size: '100000000' # in bytes
 
   - name: space_nosupport
+    users:
+      - user: *space_member
 
 storages:
   - ceph
