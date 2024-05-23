@@ -303,6 +303,33 @@ def test_provider_selector_with_offline_provider(onezone_ip, onezone_admin_token
     )
 
 
+def test_provider_selector_with_dummy_provider(onezone_ip, onezone_admin_token):
+    """Test dummy provider should be omitted."""
+    client_1 = OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        ["dummy.org", _random_provider_specifier(PROVIDER_KRK_DOMAIN)],
+        verify_ssl=False,
+    )
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client_1)
+
+    client_1.get_attributes(space_specifier)
+    assert (
+        _get_selected_provider(client_1, space_specifier).domain == PROVIDER_KRK_DOMAIN
+    )
+
+    client_2 = OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        ["dummyId", _random_provider_specifier(PROVIDER_PAR_DOMAIN)],
+        verify_ssl=False,
+    )
+    client_2.get_attributes(space_specifier)
+    assert (
+        _get_selected_provider(client_2, space_specifier).domain == PROVIDER_PAR_DOMAIN
+    )
+
+
 def test_get_file_id(client: OnedataFileRESTClient):
     """Test 'get_file_id' method."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
