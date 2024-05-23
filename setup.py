@@ -22,7 +22,7 @@ CLASSIFIERS = [
 with open("README.md", "rt") as f:
     DESCRIPTION = f.read()
 
-REQUIREMENTS = ["packaging", "requests", "typing-extensions==4.3.0"]
+REQUIREMENTS = ["packaging", "requests", "typing-extensions>=4.3.0"]
 
 setup(
     name="onedatafilerestclient",
