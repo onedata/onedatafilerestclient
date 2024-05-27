@@ -6,6 +6,7 @@ __copyright__ = "Copyright (C) 2024 Onedata"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
 import copy
+import itertools
 import sys
 import time
 import typing
@@ -13,7 +14,7 @@ from functools import lru_cache
 from typing import Dict, Final, List, Optional, Tuple, Union, cast
 
 from .errors import SpaceNotFoundError
-from .httpclient import HttpClient
+from .http_client import HttpClient
 
 if sys.version_info < (3, 11):
     from typing_extensions import TypeAlias, TypedDict
@@ -139,18 +140,30 @@ class OnezoneRESTClient:
         self._ensure_cached_token_scope_is_up_to_date()
         return cast(AccessTokenScope, copy.deepcopy(self._token_scope_cache))
 
-    def list_spaces(self) -> List[SpaceFQN]:
+    def list_spaces(self) -> List[SpaceSpecifier]:
         """List all spaces available for the current token."""
-        access_token_scope = self.infer_token_scope()
-        all_spaces = access_token_scope["dataAccessScope"]["spaces"]
+        token_scope = self.infer_token_scope()
+        space_registry = token_scope["dataAccessScope"]["spaces"]
 
-        supported_spaces = [
-            f'{space_details["name"]}@{space_id}'
-            for space_id, space_details in all_spaces.items()
-            if _is_space_supported(space_details)
+        all_space_refs = [
+            (space_details["name"], space_id)
+            for space_id, space_details in space_registry.items()
         ]
+        all_space_refs.sort()
 
-        return supported_spaces
+        result: List[SpaceSpecifier] = []
+        for space_name, refs_iter in itertools.groupby(
+            all_space_refs, key=lambda x: x[0]
+        ):
+            refs_list = list(refs_iter)
+            if len(refs_list) > 1:
+                # Multiple spaces with the same name, use fully qualified name
+                result.extend(f"{space_name}@{space_id}" for _, space_id in refs_list)
+            else:
+                # Only one space with this name, use the name alone
+                result.append(space_name)
+
+        return result
 
     def ensure_space_fqn(self, space_specifier: SpaceSpecifier) -> SpaceFQN:
         if is_fully_qualified_space_name(space_specifier):
@@ -209,8 +222,3 @@ def unpack_fully_qualified_space_name(space_fqn: SpaceFQN) -> Tuple[SpaceName, S
     """Infer space name and id from fully qualified space name."""
     space_name, space_id = space_fqn.split("@")
     return space_name, space_id
-
-
-def _is_space_supported(space_details: SpaceDetails) -> bool:
-    """Check if space is supported."""
-    return "supports" in space_details and bool(space_details["supports"])
