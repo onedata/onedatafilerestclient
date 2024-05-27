@@ -19,13 +19,12 @@ from .file_attributes import (
     build_http_get_file_attr_params,
     normalize_file_attrs_json,
 )
-from .httpclient import HttpClient
+from .http_client import HttpClient
 from .onezone_rest_client import (
     AccessTokenScope,
     OnezoneRESTClient,
     SpaceFQN,
     SpaceId,
-    SpaceName,
     SpaceSpecifier,
 )
 from .provider_selector import (
@@ -82,15 +81,19 @@ def _find_available_provider(
             if access_token_scope["dataAccessScope"]["readonly"]:
                 raise ReadonlyTokenError
 
+        # pylint: disable=W0212
+        oz_client = self._oz_client
+        provider_selector = self._provider_selector
+
+        space_specifier = oz_client.ensure_space_fqn(space_specifier)
+
         provider = kwargs.get("provider")
         if provider is not None:
             return func(self, space_specifier, *args, **kwargs)
 
-        # pylint: disable=W0212
-        provider_selector = self._provider_selector
         for provider in provider_selector.iter_available_space_providers(
             space_specifier,
-            oz_rest_client=self._oz_client,
+            oz_rest_client=oz_client,
             except_readonly=except_readonly,
         ):
             try:
@@ -157,15 +160,18 @@ class OnedataFileRESTClient:
     def get_file_id(
         self,
         space_specifier: SpaceSpecifier,
-        file_path: FilePath,
         *,
+        file_path: Optional[FilePath] = None,
         retries: int = 3,
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> FileId:
         """Get Onedata file id based on space specifier and file path."""
         provider = self._ensure_provider(provider)
-        path = f"/lookup-file-id/{space_specifier}/{file_path}"
-        url = self._build_op_url(provider, path)
+
+        rest_path = f"/lookup-file-id/{space_specifier}"
+        if file_path is not None:
+            rest_path += f"/{file_path.lstrip('/')}"
+        url = self._build_op_url(provider, rest_path)
 
         while True:
             try:
@@ -226,9 +232,9 @@ class OnedataFileRESTClient:
         self,
         space_specifier: SpaceSpecifier,
         *,
+        attributes: Optional[List[FileAttrKey]] = None,
         limit: int = 1000,
         continuation_token: Optional[str] = None,
-        attributes: Optional[List[FileAttrKey]] = None,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
         provider: Optional[SpaceSupportingProvider] = None,
@@ -286,8 +292,8 @@ class OnedataFileRESTClient:
     def iter_file_content(
         self,
         space_specifier: SpaceSpecifier,
-        chunk_size: int,
         *,
+        chunk_size: int = 1048576,  # 1 MB
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
         provider: Optional[SpaceSupportingProvider] = None,
@@ -367,24 +373,22 @@ class OnedataFileRESTClient:
     @_find_available_provider(except_readonly=True)
     def move(
         self,
-        src_space_name: SpaceName,
+        src_space_specifier: SpaceSpecifier,
         src_file_path: FilePath,
-        dst_space_name: SpaceName,
+        dst_space_specifier: SpaceSpecifier,
         dst_file_path: FilePath,
         *,
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Rename a file or directory."""
-        # First create the target directory (this assumes that the src_file_path
-        # already exists)
         provider = self._ensure_provider(provider)
         headers = {
             "X-CDMI-Specification-Version": "1.1.1",
             "Content-type": "application/cdmi-object",
         }
-        url = f"https://{provider.domain}/cdmi/{dst_space_name}/{dst_file_path}"
+        url = f"https://{provider.domain}/cdmi/{dst_space_specifier}/{dst_file_path}"
 
-        data = {"move": f"{src_space_name}/{src_file_path}"}
+        data = {"move": f"{src_space_specifier}/{src_file_path}"}
 
         self._op_client.put(url, data=json.dumps(data), headers=headers)
 
@@ -409,14 +413,16 @@ class OnedataFileRESTClient:
             return file_id
 
         if file_path is not None:
-            file_id = self.get_file_id(space_specifier, file_path, provider=provider)
+            file_id = self.get_file_id(
+                space_specifier, file_path=file_path, provider=provider
+            )
             return typing.cast(FileId, file_id)
 
         return self.get_space_id(space_specifier)
 
     @staticmethod
-    def _build_op_url(provider: SpaceSupportingProvider, path: str) -> str:
-        if not path.startswith("/"):
-            path = "/" + path
+    def _build_op_url(provider: SpaceSupportingProvider, rest_path: str) -> str:
+        if not rest_path.startswith("/"):
+            rest_path = "/" + rest_path
 
-        return f"https://{provider.domain}/api/v3/oneprovider{path}"
+        return f"https://{provider.domain}/api/v3/oneprovider{rest_path}"
