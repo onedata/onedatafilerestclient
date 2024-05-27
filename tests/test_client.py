@@ -27,6 +27,7 @@ from . import (
     PROVIDER_KRK_DOMAIN,
     PROVIDER_PAR_DOMAIN,
     SPACE_KRK_PAR_NAME,
+    SPACE_NO_SUPPORT_NAME,
     SPACE_PAR_NAME,
     ZONE_DOMAIN,
 )
@@ -83,14 +84,20 @@ def test_ssl_verification(client_verifying_ssl: OnedataFileRESTClient):
 
 def test_list_spaces(client: OnedataFileRESTClient):
     """Test 'list_spaces' method."""
-    exp_spaces = sorted(
-        [
-            _get_space_fqn(SPACE_KRK_PAR_NAME, client),
-            _get_space_fqn(SPACE_PAR_NAME, client),
-        ]
-    )
+    token_scope = client.get_token_scope()
+    space_registry = token_scope["dataAccessScope"]["spaces"]
 
-    assert exp_spaces == sorted(client.list_spaces())
+    exp_space_list = []
+    for space_id, space_details in space_registry.items():
+        space_specifier = space_details["name"]
+        if space_specifier == SPACE_NO_SUPPORT_NAME:
+            space_specifier += f"@{space_id}"
+
+        exp_space_list.append(space_specifier)
+
+    exp_space_list.sort()
+
+    assert exp_space_list == sorted(client.list_spaces())
 
 
 def test_get_space_id(onezone_ip, onezone_admin_token):
@@ -337,7 +344,7 @@ def test_get_file_id(client: OnedataFileRESTClient):
     file_path = random_path()
     file_id = client.create_file(space_specifier, file_path, create_parents=True)
 
-    assert file_id == client.get_file_id(space_specifier, file_path)
+    assert file_id == client.get_file_id(space_specifier, file_path=file_path)
 
 
 def test_get_attributes_for_space_dir(client: OnedataFileRESTClient):
@@ -443,7 +450,7 @@ def test_list_children(client: OnedataFileRESTClient):
 
     token = None
     limit = random_int(4, 10)
-    dir_id = client.get_file_id(space_specifier, dir_path)
+    dir_id = client.get_file_id(space_specifier, file_path=dir_path)
     dir_selector = _random_file_selector(dir_id, dir_path)
 
     children = []
@@ -473,7 +480,9 @@ def test_get_file_content(client_krakow: OnedataFileRESTClient):
 
     file_size = 1024
     exp_file_content = random_bytes(file_size)
-    client_krakow.put_file_content(space_specifier, exp_file_content, **file_selector)
+    client_krakow.put_file_content(
+        space_specifier, data=exp_file_content, **file_selector
+    )
 
     assert exp_file_content == client_krakow.get_file_content(
         space_specifier, **file_selector
@@ -495,7 +504,7 @@ def test_get_file_content_with_readonly_token_on_the_same_provider(
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
-    client_krakow.put_file_content(space_specifier, file_content, **file_selector)
+    client_krakow.put_file_content(space_specifier, data=file_content, **file_selector)
 
     assert (
         client_ro_krakow.get_file_content(space_specifier, **file_selector)
@@ -543,7 +552,7 @@ def test_eacces_file(onezone_ip, onezone_space_member_token):
     print(_get_selected_provider(client, space_specifier).domain)
     with pytest.raises(OnedataRESTError) as exc_info:
         file_content = random_bytes(1024)
-        client.put_file_content(space_specifier, file_content, **file_selector)
+        client.put_file_content(space_specifier, data=file_content, **file_selector)
         print(_get_selected_provider(client, space_specifier).domain)
 
     e = exc_info.value
@@ -562,11 +571,11 @@ def test_iter_file_content(client_krakow: OnedataFileRESTClient):
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
-    client_krakow.put_file_content(space_specifier, file_content, **file_selector)
+    client_krakow.put_file_content(space_specifier, data=file_content, **file_selector)
 
     chunk_size = random_int(4, 100)
     stream = client_krakow.iter_file_content(
-        space_specifier, chunk_size, **file_selector
+        space_specifier, chunk_size=chunk_size, **file_selector
     )
 
     buff = b""
@@ -587,7 +596,9 @@ def test_put_file_content(client: OnedataFileRESTClient):
 
     file_size = 100
     rand_bytes = random_bytes(file_size)
-    client.put_file_content(space_specifier, rand_bytes, offset=100, **file_selector)
+    client.put_file_content(
+        space_specifier, data=rand_bytes, offset=100, **file_selector
+    )
     exp_file_content = 100 * b"\0" + rand_bytes
 
     assert exp_file_content == client.get_file_content(space_specifier, **file_selector)
@@ -604,7 +615,7 @@ def test_create_file(client: OnedataFileRESTClient):
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
-    client.put_file_content(space_specifier, file_content, **file_selector)
+    client.put_file_content(space_specifier, data=file_content, **file_selector)
 
     content = client.get_file_content(space_specifier, **file_selector)
 
@@ -641,7 +652,7 @@ def test_remove_with_readonly_token(
     file_selector = _random_file_selector(file_id, file_path)
 
     file_content = random_bytes(1024)
-    client_krakow.put_file_content(space_specifier, file_content, **file_selector)
+    client_krakow.put_file_content(space_specifier, data=file_content, **file_selector)
 
     with pytest.raises(ReadonlyTokenError):
         client_ro_krakow.remove(space_specifier, **file_selector)
@@ -760,7 +771,7 @@ def _patch_provider_offline(client, provider_id):
 @contextmanager
 def _mock_http_client(raise_connection_error_for_provider_domains):
     # pylint: disable=C0415
-    from onedatafilerestclient.httpclient import HttpClient
+    from onedatafilerestclient.http_client import HttpClient
 
     # pylint: disable=W0212
     original_send_request_method = HttpClient._send_request

@@ -77,6 +77,9 @@ spaces:
   - name: space_nosupport
     users:
       - user: *space_member
+  - name: space_nosupport
+    users:
+      - user: *space_member
 
 storages:
   - ceph
