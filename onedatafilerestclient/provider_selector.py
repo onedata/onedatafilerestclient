@@ -8,6 +8,7 @@ __license__ = "This software is released under the MIT license cited in LICENSE.
 import logging
 import sys
 import time
+from datetime import datetime
 from typing import Dict, Iterator, List, NamedTuple, Optional, Union
 
 from packaging.version import Version, parse
@@ -26,7 +27,7 @@ else:
     from typing import TypeAlias
 
 
-logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 ProviderDomain: TypeAlias = str
 ProviderSpecifier: TypeAlias = Union[ProviderId, ProviderDomain]
@@ -74,19 +75,19 @@ class ProviderSelector:
 
     def blacklist(self, provider: SpaceSupportingProvider) -> None:
         """Check if specified provider is blacklisted."""
-        blacklist_time_end = time.time_ns() + self._blacklist_time_limit_ns
+        blacklist_time_end_ns = time.time_ns() + self._blacklist_time_limit_ns
 
-        logger.debug(
+        _logger.debug(
             "Blacklisting provider '%s' (id: %s) until %s",
-            provider.id,
             provider.domain,
-            blacklist_time_end,
+            provider.id,
+            datetime.fromtimestamp(blacklist_time_end_ns // 1e9),
         )
 
         if len(self._provider_blacklist_cache) > self._cache_size_limit:
-            self._provider_blacklist_cache = {provider.id: blacklist_time_end}
+            self._provider_blacklist_cache = {provider.id: blacklist_time_end_ns}
         else:
-            self._provider_blacklist_cache[provider.id] = blacklist_time_end
+            self._provider_blacklist_cache[provider.id] = blacklist_time_end_ns
 
     def iter_available_space_providers(
         self,
@@ -114,6 +115,12 @@ class ProviderSelector:
             oz_rest_client=oz_rest_client,
             except_readonly=except_readonly,
         ):
+            _logger.debug(
+                "Assigning provider '%s' (id: %s) to handle requests for space '%s'",
+                provider.domain,
+                provider.id,
+                space_fqn,
+            )
             self._provider_for_space_cache[cache_key] = provider
             yield provider
 
