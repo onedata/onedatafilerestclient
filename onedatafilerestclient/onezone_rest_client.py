@@ -158,7 +158,7 @@ class OnezoneRESTClient:
             refs_list = list(refs_iter)
             if len(refs_list) > 1:
                 # Multiple spaces with the same name, use fully qualified name
-                result.extend(f"{space_name}@{space_id}" for _, space_id in refs_list)
+                result.extend(pack_space_fqn(*space_ref) for space_ref in refs_list)
             else:
                 # Only one space with this name, use the name alone
                 result.append(space_name)
@@ -170,12 +170,12 @@ class OnezoneRESTClient:
             return space_specifier
 
         space_id = self._get_space_id_by_name(space_specifier)
-        return f"{space_specifier}@{space_id}"
+        return pack_space_fqn(space_specifier, space_id)
 
     def get_space_id(self, space_specifier: SpaceSpecifier) -> SpaceId:
         """Get space id by specifier."""
         if is_fully_qualified_space_name(space_specifier):
-            _, space_id = unpack_fully_qualified_space_name(space_specifier)
+            _, space_id = unpack_space_fqn(space_specifier)
             return space_id
 
         return self._get_space_id_by_name(space_specifier)
@@ -218,7 +218,12 @@ def is_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:
     return "@" in space_specifier
 
 
-def unpack_fully_qualified_space_name(space_fqn: SpaceFQN) -> Tuple[SpaceName, SpaceId]:
+def pack_space_fqn(space_name: SpaceName, space_id: SpaceId) -> SpaceFQN:
+    """Create space fully qualified name using space name and id."""
+    return f"{space_name}@{space_id}"
+
+
+def unpack_space_fqn(space_fqn: SpaceFQN) -> Tuple[SpaceName, SpaceId]:
     """Infer space name and id from fully qualified space name."""
     space_name, space_id = space_fqn.split("@")
     return space_name, space_id

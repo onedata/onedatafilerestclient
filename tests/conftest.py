@@ -94,45 +94,41 @@ def fixture_provider_par_ip():
 
 @pytest.fixture(scope=FIXTURE_SCOPE, name="onezone_admin_token")
 def fixture_onezone_admin_token(onezone_ip):
-    """Generate a new client token."""
-    result = requests.post(
-        f"https://{onezone_ip}/api/v3/onezone/user/client_tokens",
-        {},
-        auth=requests.auth.HTTPBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD),
-        verify=False,
-    )
-    return result.json()["token"]
+    """Generate a new admin token."""
+    return _create_temp_token(onezone_ip, ADMIN_USERNAME, ADMIN_PASSWORD)
 
 
 @pytest.fixture(scope=FIXTURE_SCOPE, name="onezone_readonly_token")
 def fixture_onezone_readonly_token(onezone_ip):
-    """Generate new readonly only client token."""
-    temporary_token_path = "api/v3/onezone/user/tokens/temporary"
-    tokens_endpoint = f"https://{onezone_ip}/{temporary_token_path}"
-    headers = {"content-type": "application/json"}
-    res = requests.post(
-        tokens_endpoint,
-        json={
-            "type": {"accessToken": {}},
-            "caveats": [
-                {"type": "data.readonly"},
-                {"type": "time", "validUntil": int(time.time()) + 2590000},
-            ],
-        },
-        headers=headers,
-        auth=requests.auth.HTTPBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD),
-        verify=False,
-    )
-    return res.json()["token"]
+    """Generate new readonly only admin token."""
+    return _create_temp_token(onezone_ip, ADMIN_USERNAME, ADMIN_PASSWORD, readonly=True)
 
 
 @pytest.fixture(scope=FIXTURE_SCOPE, name="onezone_space_member_token")
 def fixture_space_member_token(onezone_ip):
-    """Generate a new client token."""
+    """Generate a new space member token."""
+    return _create_temp_token(onezone_ip, SPACE_MEMBER_USERNAME, SPACE_MEMBER_PASSWORD)
+
+
+def _create_temp_token(
+    onezone_ip: str, username: str, password: str, *, readonly: bool = False
+) -> str:
+    url = f"https://{onezone_ip}/api/v3/onezone/user/tokens/temporary"
+    headers = {"content-type": "application/json"}
+    auth = requests.auth.HTTPBasicAuth(username, password)
+
+    caveats = [{"type": "time", "validUntil": int(time.time()) + 2590000}]
+    if readonly:
+        caveats.append({"type": "data.readonly"})
+
     result = requests.post(
-        f"https://{onezone_ip}/api/v3/onezone/user/client_tokens",
-        {},
-        auth=requests.auth.HTTPBasicAuth(SPACE_MEMBER_USERNAME, SPACE_MEMBER_PASSWORD),
+        url,
+        json={
+            "type": {"accessToken": {}},
+            "caveats": caveats,
+        },
+        headers=headers,
+        auth=auth,
         verify=False,
     )
     return result.json()["token"]

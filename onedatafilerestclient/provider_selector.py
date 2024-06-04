@@ -116,7 +116,7 @@ class ProviderSelector:
             except_readonly=except_readonly,
         ):
             _logger.debug(
-                "Assigning provider '%s' (id: %s) to handle requests for space '%s'",
+                "Designating provider '%s' (id: %s) to handle requests for space '%s'",
                 provider.domain,
                 provider.id,
                 space_fqn,

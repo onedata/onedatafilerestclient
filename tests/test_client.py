@@ -91,7 +91,7 @@ def test_list_spaces(client: OnedataFileRESTClient):
     for space_id, space_details in space_registry.items():
         space_specifier = space_details["name"]
         if space_specifier == SPACE_NO_SUPPORT_NAME:
-            space_specifier += f"@{space_id}"
+            space_specifier = _pack_space_fqn(space_specifier, space_id)
 
         exp_space_list.append(space_specifier)
 
@@ -110,7 +110,7 @@ def test_get_space_id(onezone_ip, onezone_admin_token):
     space_par_id = client.get_space_id(SPACE_PAR_NAME)
 
     # space_fqn resolution should not be cached
-    space_par_fqn = f"{SPACE_PAR_NAME}@{space_par_id}"
+    space_par_fqn = _pack_space_fqn(SPACE_PAR_NAME, space_par_id)
     assert client.get_space_id(space_par_fqn) == space_par_id
 
     space_par_new_name = random_str()
@@ -691,7 +691,10 @@ def _random_space_specifier(space_name, client):
 
 
 def _get_space_fqn(space_name, client):
-    space_id = client.get_space_id(space_name)
+    return _pack_space_fqn(space_name, client.get_space_id(space_name))
+
+
+def _pack_space_fqn(space_name, space_id):
     return f"{space_name}@{space_id}"
 
 
@@ -740,7 +743,8 @@ def _rename_space(token, space_id, new_name):
         data=json.dumps({"name": new_name}),
         verify=False,
     )
-    result.raise_for_status()
+    if not result.ok:
+        raise OnedataRESTError.from_response(result)
 
 
 def _get_provider_id(host: str) -> str:

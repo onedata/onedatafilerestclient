@@ -17,6 +17,7 @@ from .file_attributes import (
     FileAttrsJson,
     FileType,
     build_http_get_file_attr_params,
+    build_http_list_children_attrs_params,
     normalize_file_attrs_json,
 )
 from .http_client import HttpClient
@@ -85,20 +86,20 @@ def _find_available_provider(
         oz_client = self._oz_client
         provider_selector = self._provider_selector
 
-        space_specifier = oz_client.ensure_space_fqn(space_specifier)
+        space_fqn = oz_client.ensure_space_fqn(space_specifier)
 
         provider = kwargs.get("provider")
         if provider is not None:
-            return func(self, space_specifier, *args, **kwargs)
+            return func(self, space_fqn, *args, **kwargs)
 
         for provider in provider_selector.iter_available_space_providers(
-            space_specifier,
+            space_fqn,
             oz_rest_client=oz_client,
             except_readonly=except_readonly,
         ):
             try:
                 kwargs["provider"] = provider
-                return func(self, space_specifier, *args, **kwargs)
+                return func(self, space_fqn, *args, **kwargs)
             except requests.exceptions.ConnectionError:
                 provider_selector.blacklist(provider)
 
@@ -203,9 +204,8 @@ class OnedataFileRESTClient:
         if qs:
             url += f"?{qs}"
 
-        attrs = normalize_file_attrs_json(
-            provider, attributes, self._op_client.get(url, data=body).json()
-        )
+        result = self._op_client.get(url, data=body).json()
+        attrs = normalize_file_attrs_json(provider, attributes, result)
 
         return typing.cast(FileAttrsJson, attrs)
 
@@ -251,7 +251,7 @@ class OnedataFileRESTClient:
         if not attributes:
             attributes = ["name", "type"]
 
-        qs_attrs, body = build_http_get_file_attr_params(provider, attributes)
+        qs_attrs, body = build_http_list_children_attrs_params(provider, attributes)
         if qs_attrs:
             qs += f"&{qs_attrs}"
 

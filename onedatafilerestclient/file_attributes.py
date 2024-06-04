@@ -23,7 +23,7 @@ else:
     from typing import TypeAlias, TypedDict
 
 
-_PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION: Final[Version] = Version("21.02.5")
+_PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION: Final[Version] = Version("21.2.5")
 
 _NOT_SUPPORTED_ATTR_ERROR_DETAILS_FMT: Final[str] = (
     "The provider chosen for this space ({domain}) is in version ({version}) "
@@ -160,6 +160,37 @@ class FileAttrsJson(TypedDict, total=False):
 
 
 def build_http_get_file_attr_params(
+    provider: SpaceSupportingProvider, requested_attr_keys: Optional[List[FileAttrKey]]
+) -> Tuple[Optional[str], Optional[Dict[str, List[str]]]]:
+    """Build query string and body for HTTP request to retrieve file attributes.
+
+    NOTE: In case not all requested attributes are supported by selected
+    provider exception will be raised.
+    """
+    qs = None
+    body = None
+
+    if requested_attr_keys is not None:
+        if provider.version < _PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION:
+            # Due to a bug it is not possible to fetch more than one specific
+            # attribute for file using old API. Trying to do sa results in empty
+            # json returned. As a workaround all attributes are fetched (no qs)
+            if len(requested_attr_keys) <= 1:
+                qs = "&".join(
+                    f"attribute={_get_deprecated_api_attr_key(provider, attr_key)}"
+                    for attr_key in requested_attr_keys
+                )
+            else:
+                # ensure all requested attributes supported
+                for attr_key in requested_attr_keys:
+                    _get_deprecated_api_attr_key(provider, attr_key)
+        else:
+            body = {"attributes": requested_attr_keys}
+
+    return qs, body
+
+
+def build_http_list_children_attrs_params(
     provider: SpaceSupportingProvider, requested_attr_keys: Optional[List[FileAttrKey]]
 ) -> Tuple[Optional[str], Optional[Dict[str, List[str]]]]:
     """Build query string and body for HTTP request to retrieve file attributes.
