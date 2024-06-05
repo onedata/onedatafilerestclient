@@ -53,7 +53,7 @@ class NoAvailableProviderForSpaceError(OnedataError):
     msg = (
         "Could not find any available Onedata provider for the space '{space_specifier}'; "
         "either the space is not supported at all, or all supporting providers "
-        "are offline or malfunctioning."
+        "are offline, malfunctioning or outdated (version >= 21.02.1 is required)."
     )
 
     def __init__(self, space_specifier: str):

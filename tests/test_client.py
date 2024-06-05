@@ -83,7 +83,11 @@ def test_ssl_verification(client_verifying_ssl: OnedataFileRESTClient):
 
 
 def test_list_spaces(client: OnedataFileRESTClient):
-    """Test 'list_spaces' method."""
+    """Test 'list_spaces' method.
+
+    Test listing user spaces and proper handling of duplicate space names
+    (the space with no support is duplicated, see the test_env_config.yaml)
+    """
     token_scope = client.get_token_scope()
     space_registry = token_scope["dataAccessScope"]["spaces"]
 

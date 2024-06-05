@@ -9,7 +9,7 @@ import logging
 import sys
 import time
 from datetime import datetime
-from typing import Dict, Iterator, List, NamedTuple, Optional, Union
+from typing import Dict, Final, Iterator, List, NamedTuple, Optional, Union
 
 from packaging.version import Version, parse
 
@@ -28,6 +28,8 @@ else:
 
 
 _logger = logging.getLogger(__name__)
+
+_MIN_SUPPORTED_PROVIDER_VERSION: Final[Version] = Version("21.2.1")
 
 ProviderDomain: TypeAlias = str
 ProviderSpecifier: TypeAlias = Union[ProviderId, ProviderDomain]
@@ -194,6 +196,9 @@ class ProviderSelector:
             return False
 
         if not provider.online:
+            return False
+
+        if provider.version < _MIN_SUPPORTED_PROVIDER_VERSION:
             return False
 
         return True

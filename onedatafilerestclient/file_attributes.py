@@ -173,7 +173,7 @@ def build_http_get_file_attr_params(
     if requested_attr_keys is not None:
         if provider.version < _PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION:
             # Due to a bug it is not possible to fetch more than one specific
-            # attribute for file using old API. Trying to do sa results in empty
+            # attribute for file using old API. Trying to do so results in empty
             # json returned. As a workaround all attributes are fetched (no qs)
             if len(requested_attr_keys) <= 1:
                 qs = "&".join(
@@ -181,7 +181,7 @@ def build_http_get_file_attr_params(
                     for attr_key in requested_attr_keys
                 )
             else:
-                # ensure all requested attributes supported
+                # ensure all requested attributes are supported
                 for attr_key in requested_attr_keys:
                     _get_deprecated_api_attr_key(provider, attr_key)
         else:
