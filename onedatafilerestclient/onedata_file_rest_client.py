@@ -9,7 +9,7 @@ import typing
 from functools import partial, wraps
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
-import requests
+import requests.exceptions
 
 from .errors import NoAvailableProviderForSpaceError, ReadonlyTokenError
 from .file_attributes import (
@@ -100,7 +100,10 @@ def _find_available_provider(
             try:
                 kwargs["provider"] = provider
                 return func(self, space_fqn, *args, **kwargs)
-            except requests.exceptions.ConnectionError:
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ReadTimeout,
+            ):
                 provider_selector.blacklist(provider)
 
         raise NoAvailableProviderForSpaceError(space_specifier)
