@@ -28,6 +28,7 @@ else:
 
 
 _logger = logging.getLogger(__name__)
+_logger.addHandler(logging.NullHandler())
 
 _MIN_SUPPORTED_PROVIDER_VERSION: Final[Version] = Version("21.2.1")
 

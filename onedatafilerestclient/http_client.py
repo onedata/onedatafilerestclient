@@ -15,6 +15,7 @@ from requests.structures import CaseInsensitiveDict
 from .errors import OnedataRESTError
 
 _logger = logging.getLogger(__name__)
+_logger.addHandler(logging.NullHandler())
 
 _HEADERS_TO_LOG = {"range"}
 
@@ -22,7 +23,7 @@ _HEADERS_TO_LOG = {"range"}
 class HttpClient:
     """REST-style wrapper over requests library."""
 
-    timeout: int = 5
+    timeout: int = 8
     session: requests.Session
 
     def __init__(self, *, verify_ssl: bool = True) -> None:
