@@ -107,5 +107,5 @@ assert_uploaded:
 	echo "Parsed version: $$VERSION"; \
 	SANITIZED_VERSION=$$($(call docker_run, python3 -c "from packaging.version import Version; print(Version('$$VERSION'))")); \
 	echo "Sanitized version: $$SANITIZED_VERSION"; \
-	$(call docker_run, python3 -m pip install $(PYPI_PACKAGE_NAME)==$$SANITIZED_VERSION) || \
+	$(call docker_run, python3 -m pip install $(PYPI_PACKAGE_NAME)==$$SANITIZED_VERSION) --dry-run || \
 	(echo "Version $$SANITIZED_VERSION of package $(PYPI_PACKAGE_NAME) is NOT available on PyPI."; exit 1)
