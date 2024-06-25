@@ -86,20 +86,20 @@ def _find_available_provider(
         oz_client = self._oz_client
         provider_selector = self._provider_selector
 
-        space_fqn = oz_client.ensure_space_fqn(space_specifier)
+        space_canonical_fqn = oz_client.ensure_space_canonical_fqn(space_specifier)
 
         provider = kwargs.get("provider")
         if provider is not None:
-            return func(self, space_fqn, *args, **kwargs)
+            return func(self, space_canonical_fqn, *args, **kwargs)
 
         for provider in provider_selector.iter_available_space_providers(
-            space_fqn,
+            space_canonical_fqn,
             oz_rest_client=oz_client,
             except_readonly=except_readonly,
         ):
             try:
                 kwargs["provider"] = provider
-                return func(self, space_fqn, *args, **kwargs)
+                return func(self, space_canonical_fqn, *args, **kwargs)
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.ReadTimeout,
@@ -124,11 +124,15 @@ class OnedataFileRESTClient:
         token: str,
         preferred_providers: Optional[List[ProviderSpecifier]] = None,
         *,
+        alt_space_fqn_separators: Optional[List[str]] = None,
         verify_ssl: bool = True,
     ):
         """Construct OnedataFileRESTClient instance."""
         self._oz_client = OnezoneRESTClient(
-            host=onezone_host, token=token, verify_ssl=verify_ssl
+            host=onezone_host,
+            token=token,
+            alt_space_fqn_separators=alt_space_fqn_separators,
+            verify_ssl=verify_ssl,
         )
         self._provider_selector = ProviderSelector(
             preferred_providers=preferred_providers
@@ -384,12 +388,18 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Rename a file or directory."""
+        dst_space_canonical_fqn = self._oz_client.ensure_space_canonical_fqn(
+            dst_space_specifier
+        )
+
         provider = self._ensure_provider(provider)
         headers = {
             "X-CDMI-Specification-Version": "1.1.1",
             "Content-type": "application/cdmi-object",
         }
-        url = f"https://{provider.domain}/cdmi/{dst_space_specifier}/{dst_file_path}"
+        url = (
+            f"https://{provider.domain}/cdmi/{dst_space_canonical_fqn}/{dst_file_path}"
+        )
 
         data = {"move": f"{src_space_specifier}/{src_file_path}"}
 
