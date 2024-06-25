@@ -142,6 +142,30 @@ def test_get_space_id(onezone_ip, onezone_admin_token):
         time.sleep(3)
 
 
+def test_space_alternative_fqn(onezone_ip, onezone_admin_token):
+    """Test 'get_space_id' method."""
+    alt_space_fqn_separators = ["__at__", "-.-", "<>"]
+    client = OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        [PROVIDER_KRK_DOMAIN],
+        alt_space_fqn_separators=alt_space_fqn_separators,
+        verify_ssl=False,
+    )
+
+    space_krk_par_id = client.get_space_id(SPACE_KRK_PAR_NAME)
+    space_krk_par_file_id = client.get_file_id(SPACE_KRK_PAR_NAME)
+
+    for separator in alt_space_fqn_separators:
+        space_krk_par_fqn = f"{SPACE_KRK_PAR_NAME}{separator}{space_krk_par_id}"
+        assert client.get_space_id(space_krk_par_fqn) == space_krk_par_id
+        assert client.get_file_id(space_krk_par_fqn) == space_krk_par_file_id
+
+    invalid_space_fqn = f"{SPACE_KRK_PAR_NAME}#{space_krk_par_id}"
+    with pytest.raises(SpaceNotFoundError):
+        client.get_space_id(invalid_space_fqn)
+
+
 def test_provider_selector(
     onezone_ip, onezone_admin_token, client_krakow, client_paris
 ):
