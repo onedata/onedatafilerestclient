@@ -19,7 +19,7 @@ from onedatafilerestclient.errors import (
     SpaceNotFoundError,
 )
 from onedatafilerestclient.file_attributes import (
-    _DEPRECATED_BASIC_FILE_ATTR_KEYS,
+    _SNAKE_CASE_BASIC_FILE_ATTR_KEYS,
     BasicFileAttrKey,
 )
 
@@ -402,19 +402,28 @@ def test_get_selected_attributes(client: OnedataFileRESTClient):
     """Test 'get_attributes' method with random attributes."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
 
-    # Set min version to lower that testing providers to allow all new attrs
-    with _mock_min_provider_version_supporting_new_file_attrs(Version("20.1.1")):
+    all_basic_attr_keys = get_args(BasicFileAttrKey)
 
-        requested_attr_keys = random.sample(get_args(BasicFileAttrKey), 5)
+    # Set min version to lower that testing providers to test snake case API
+    with _mock_required_file_attrs_versions(
+        provider_supporting_came_case_api_min_version=Version("20.1.1")
+    ):
+
+        requested_attr_keys = random.sample(all_basic_attr_keys, 5)
         space_attrs = client.get_attributes(
             space_specifier, attributes=requested_attr_keys
         )
         assert sorted(requested_attr_keys) == sorted(space_attrs.keys())
 
-    # Set min version to higher that testing providers to disallow new attrs
-    with _mock_min_provider_version_supporting_new_file_attrs(Version("300.1.1")):
-        requested_attr_keys = random.sample(_DEPRECATED_BASIC_FILE_ATTR_KEYS.keys(), 5)
-        requested_attr_keys.append("acl")
+    rand_attr_key = random.choice(all_basic_attr_keys)
+    with _mock_required_file_attrs_versions(
+        min_provider_version_supporting_basic_attr_key={
+            rand_attr_key: Version("300.1.1")
+        }
+    ):
+        requested_attr_keys = list(
+            {*random.sample(_SNAKE_CASE_BASIC_FILE_ATTR_KEYS.keys(), 5), rand_attr_key}
+        )
 
         with pytest.raises(OnedataRESTError) as exc_info:
             client.get_attributes(space_specifier, attributes=requested_attr_keys)
@@ -425,15 +434,16 @@ def test_get_selected_attributes(client: OnedataFileRESTClient):
         assert error.category == "posix"
         assert error.details == (
             f"The provider chosen for this space ({selected_provider.domain}) is in version "
-            f"({selected_provider.version}) that does not support the 'acl' "
+            f"({selected_provider.version}) that does not support the '{rand_attr_key}' "
             "attribute (requires Oneprovider version >= 300.1.1)"
         )
         assert error.description == "einval"
 
+        requested_attr_keys.remove(rand_attr_key)
         space_attrs = client.get_attributes(
-            space_specifier, attributes=requested_attr_keys[:-1]
+            space_specifier, attributes=requested_attr_keys
         )
-        exp_attrs = sorted(requested_attr_keys[:-1])
+        exp_attrs = sorted(requested_attr_keys)
         assert exp_attrs == sorted(space_attrs.keys())
 
 
@@ -830,11 +840,46 @@ def _mock_min_provider_version_supporting_new_file_attrs(mock_version):
     import onedatafilerestclient.file_attributes as fa
 
     # pylint: disable=W0212
-    original_version = fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION
+    original_version = fa._PROVIDER_SUPPORTING_CAMEL_CASE_API_KEYS_MIN_VERSION
     try:
         # pylint: disable=W0212
-        fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION = mock_version
+        fa._PROVIDER_SUPPORTING_CAMEL_CASE_API_KEYS_MIN_VERSION = mock_version
         yield
     finally:
         # pylint: disable=W0212
-        fa._PROVIDER_SUPPORTING_CURRENT_API_KEY_MIN_VERSION = original_version
+        fa._PROVIDER_SUPPORTING_CAMEL_CASE_API_KEYS_MIN_VERSION = original_version
+
+
+@contextmanager
+def _mock_required_file_attrs_versions(
+    *,
+    provider_supporting_came_case_api_min_version=None,
+    min_provider_version_supporting_basic_attr_key=None,
+):
+    # pylint: disable=C0415
+    import onedatafilerestclient.file_attributes as fa
+
+    # pylint: disable=W0212
+    original_camel_version = fa._PROVIDER_SUPPORTING_CAMEL_CASE_API_KEYS_MIN_VERSION
+    original_attrs_versions = fa._MIN_PROVIDER_VERSION_SUPPORTING_BASIC_ATTR_KEY
+
+    mock_camel_version = (
+        provider_supporting_came_case_api_min_version or original_camel_version
+    )
+    if min_provider_version_supporting_basic_attr_key:
+        mock_attrs_versions = {
+            **original_attrs_versions,
+            **min_provider_version_supporting_basic_attr_key,
+        }
+    else:
+        mock_attrs_versions = original_attrs_versions
+
+    try:
+        # pylint: disable=W0212
+        fa._PROVIDER_SUPPORTING_CAMEL_CASE_API_KEYS_MIN_VERSION = mock_camel_version
+        fa._MIN_PROVIDER_VERSION_SUPPORTING_BASIC_ATTR_KEY = mock_attrs_versions
+        yield
+    finally:
+        # pylint: disable=W0212
+        fa._PROVIDER_SUPPORTING_CAMEL_CASE_API_KEYS_MIN_VERSION = original_camel_version
+        fa._MIN_PROVIDER_VERSION_SUPPORTING_BASIC_ATTR_KEY = original_attrs_versions
