@@ -23,7 +23,7 @@ else:
     from typing import TypeAlias, TypedDict
 
 
-_MIN_SUPPORTED_PROVIDER_API_VERSION: Final[Version] = Version("21.2.0")
+_MIN_SUPPORTED_PROVIDER_API_VERSION: Final[Version] = Version("21.2.1")
 _PROVIDER_SUPPORTING_CAMEL_CASE_API_KEYS_MIN_VERSION: Final[Version] = Version("21.2.5")
 
 _NOT_SUPPORTED_ATTR_ERROR_DETAILS_FMT: Final[str] = (
