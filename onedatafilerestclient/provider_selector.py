@@ -100,13 +100,13 @@ class ProviderSelector:
         except_readonly: bool = False,
     ) -> Iterator[SpaceSupportingProvider]:
         """Iterate over online and not blacklisted space providers."""
-        space_fqn = oz_rest_client.ensure_space_fqn(space_specifier)
+        space_canonical_fqn = oz_rest_client.ensure_space_canonical_fqn(space_specifier)
 
-        cache_key = space_fqn
+        cache_key = space_canonical_fqn
         yield from self._fetch_provider_from_cache(cache_key, except_readonly)
 
         if except_readonly:
-            cache_key = f"{space_fqn}#not_readonly"
+            cache_key = f"{space_canonical_fqn}#not_readonly"
             yield from self._fetch_provider_from_cache(cache_key, except_readonly)
 
         if len(self._provider_for_space_cache) >= self._cache_size_limit:
@@ -114,7 +114,7 @@ class ProviderSelector:
             self._provider_for_space_cache = {}
 
         for provider in self.list_available_space_providers(
-            space_fqn,
+            space_canonical_fqn,
             oz_rest_client=oz_rest_client,
             except_readonly=except_readonly,
         ):
@@ -122,7 +122,7 @@ class ProviderSelector:
                 "Designating provider '%s' (id: %s) to handle requests for space '%s'",
                 provider.domain,
                 provider.id,
-                space_fqn,
+                space_canonical_fqn,
             )
             self._provider_for_space_cache[cache_key] = provider
             yield provider

@@ -26,9 +26,17 @@ ProviderId: TypeAlias = str
 
 SpaceId: TypeAlias = str
 SpaceName: TypeAlias = str
-SpaceFQN: TypeAlias = str
+
+SpaceCanonicalFQN: TypeAlias = str
 """
 Fully qualified space name in the form: <SpaceName>@<SpaceId>
+"""
+
+SpaceFQN: TypeAlias = str
+"""
+Fully qualified space name in the form: <SpaceName><Separator><SpaceId>
+By default, the canonical separator "@" is accepted, but alternative
+ones can be provided in the 'alt_space_fqn_separators' option.
 """
 
 SpaceSpecifier: TypeAlias = Union[SpaceName, SpaceFQN]
@@ -99,16 +107,25 @@ class OnezoneRESTClient:
 
     _host: str
     _token: str
+    _alt_space_fqn_separators: List[str]
     _http_client: HttpClient
 
     _token_scope_cache: Optional[AccessTokenScope] = None
     _token_scope_cache_valid_until_ns: int = 0
     _token_scope_cache_time_limit_ns: int = 2 * 10**9  # 2 seconds
 
-    def __init__(self, host: str, token: str, *, verify_ssl: bool = True):
+    def __init__(
+        self,
+        host: str,
+        token: str,
+        *,
+        alt_space_fqn_separators: Optional[List[str]] = None,
+        verify_ssl: bool = True,
+    ):
         """Construct OnezoneRESTClient instance."""
         self._host = host
         self._token = token
+        self._alt_space_fqn_separators = alt_space_fqn_separators or []
         self._http_client = HttpClient(verify_ssl=verify_ssl)
 
         # lru_cache cannot be used as decorator, as we want to have a separate
@@ -158,27 +175,55 @@ class OnezoneRESTClient:
             refs_list = list(refs_iter)
             if len(refs_list) > 1:
                 # Multiple spaces with the same name, use fully qualified name
-                result.extend(pack_space_fqn(*space_ref) for space_ref in refs_list)
+                result.extend(
+                    pack_space_canonical_fqn(*space_ref) for space_ref in refs_list
+                )
             else:
                 # Only one space with this name, use the name alone
                 result.append(space_name)
 
         return result
 
-    def ensure_space_fqn(self, space_specifier: SpaceSpecifier) -> SpaceFQN:
-        if is_fully_qualified_space_name(space_specifier):
+    def ensure_space_canonical_fqn(
+        self, space_specifier: SpaceSpecifier
+    ) -> SpaceCanonicalFQN:
+        if is_canonical_fully_qualified_space_name(space_specifier):
             return space_specifier
 
+        space_name_and_id = self._unpack_if_space_alt_fqn(space_specifier)
+        if space_name_and_id:
+            return pack_space_canonical_fqn(*space_name_and_id)
+
         space_id = self._get_space_id_by_name(space_specifier)
-        return pack_space_fqn(space_specifier, space_id)
+        return pack_space_canonical_fqn(space_specifier, space_id)
 
     def get_space_id(self, space_specifier: SpaceSpecifier) -> SpaceId:
         """Get space id by specifier."""
-        if is_fully_qualified_space_name(space_specifier):
-            _, space_id = unpack_space_fqn(space_specifier)
+        if is_canonical_fully_qualified_space_name(space_specifier):
+            _, space_id = unpack_space_canonical_fqn(space_specifier)
             return space_id
 
+        space_name_and_id = self._unpack_if_space_alt_fqn(space_specifier)
+        if space_name_and_id:
+            return space_name_and_id[1]
+
         return self._get_space_id_by_name(space_specifier)
+
+    def _unpack_if_space_alt_fqn(
+        self, space_specifier: SpaceSpecifier
+    ) -> Optional[Tuple[SpaceName, SpaceId]]:
+        access_token_scope = self.infer_token_scope()
+        all_spaces = access_token_scope["dataAccessScope"]["spaces"]
+
+        for separator in self._alt_space_fqn_separators:
+            if separator in space_specifier:
+                space_name, space_id = space_specifier.rsplit(separator, maxsplit=1)
+
+                space_details = all_spaces.get(space_id)
+                if space_details and space_details["name"] == space_name:
+                    return space_name, space_id
+
+        return None
 
     def _get_space_id_by_name(self, space_name: SpaceName) -> SpaceId:
         # ensure space id cache is invalidated in case of token scope change
@@ -213,17 +258,21 @@ class OnezoneRESTClient:
             self._token_scope_cache_valid_until_ns = valid_until
 
 
-def is_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:
+def is_canonical_fully_qualified_space_name(space_specifier: SpaceSpecifier) -> bool:
     """Check if given space specifier if fully qualified."""
     return "@" in space_specifier
 
 
-def pack_space_fqn(space_name: SpaceName, space_id: SpaceId) -> SpaceFQN:
-    """Create space fully qualified name using space name and id."""
+def pack_space_canonical_fqn(
+    space_name: SpaceName, space_id: SpaceId
+) -> SpaceCanonicalFQN:
+    """Create space canonical fully qualified name using space name and id."""
     return f"{space_name}@{space_id}"
 
 
-def unpack_space_fqn(space_fqn: SpaceFQN) -> Tuple[SpaceName, SpaceId]:
-    """Infer space name and id from fully qualified space name."""
+def unpack_space_canonical_fqn(
+    space_fqn: SpaceCanonicalFQN,
+) -> Tuple[SpaceName, SpaceId]:
+    """Infer space name and id from canonical fully qualified space name."""
     space_name, space_id = space_fqn.split("@")
     return space_name, space_id
