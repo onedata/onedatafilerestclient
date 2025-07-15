@@ -1,47 +1,54 @@
 # OnedataFileRESTClient
 
-`OnedataFileRESTClient` is a Python client to the Onedata file REST API. It offers basic
+`OnedataFileRESTClient` is a pure Python client to the Onedata file REST API. It offers basic
 operations on files as a concise, low-level library. Most users will probably be more
-interested in [onedatarestfs](https://github.com/onedata/onedatarestfs) library, which is
+interested in [OnedataRESTFS](https://github.com/onedata/onedatarestfs) library, which is
 a plugin for [PyFilesystem](https://github.com/PyFilesystem/pyfilesystem2), implemented
-using `OnedataFileRESTClient`, providing much more user friendly interface.
+on top of this library, providing more stable and user friendly interface.
 
 Supported Onezone versions: `>= 21.02.5`
 
 Supported Oneprovider versions: `>= 21.02.5`.
 
-## Installing
+## Installation
 
-You can install `OnedataFileRESTClient` from pip as follows:
+You can install `OnedataFileRESTClient` from PyPI as follows:
 
 ```bash
 pip install onedatafilerestclient
 ```
 
+> Make sure to install a version **not newer** than the Onedata Onezone service in your deployment.
+
 ## Usage
 
+### Creating a `OnedataFileRESTClient` client instance
+
 In order to use the `OnedataFileRESTClient` we need to first import necessary module and
-then create an instance of `OnedataFileRESTClient` with Onezone hostname and an access
-token:
+then create an instance of `OnedataFileRESTClient`, providing at least two required parameters:
+
+- `onedata_onezone_host` – Hostname of the Onezone instance to connect to
+- `onedata_access_token` – Onedata access token with Oneprovider REST API privileges (see [Access tokens](https://onedata.org/#/home/documentation/21.02/user-guide/tokens[gui-guide].html))
 
 ```python
 from onedatafilerestclient import *
 
-onezone_host = 'onezone.example.com'
-access_token = 'MDAzM2xvY2F00aW9uIGRldi1vbmV6b25lLmRlZmF1bHQuc3...'
-client = OnedataFileRESTClient(onezone_host, access_token)
+onedata_onezone_host = 'onezone.example.com'
+onedata_access_token = 'MDAzM2xvY2F00aW9uIGRldi1vbmV6b25lLmRlZmF1bHQuc3...'
+client = OnedataFileRESTClient(onedata_onezone_host, onedata_access_token)
 ```
 
 The `OnedataFileRESTClient` class provides the following operations (examples below assume
-`OnedataFileRESTClient` has been setup as shown above).
+`OnedataFileRESTClient` has been setup as shown above). For more details you can check the
+method documentation in the implementation of the `OnedataFileRESTClient` on [GitHub](https://github.com/onedata/onedatafilerestclient/blob/develop/onedatafilerestclient/onedata_file_rest_client.py).
 
 ### Common API conventions
 
 For most methods of `OnedataFileRESTClient`, there are following common conventions for
 passing arguments to methods which perform operations on Onedata filesystem:
 
-* first argument is the name of the data space
-* next arguments are keyword arguments, include `file_path` or `file_id`, which need
+- first argument is the name of the data space
+- next arguments are keyword arguments, include `file_path` or `file_id`, which need
   to be specified separately from the first argument and contain path relative to the
   space directory (for `file_path`) or file ID (for `file_id`)
 
@@ -265,10 +272,10 @@ If the file already exists, the operation fails with an error.
 
 The file type can be one of:
 
-* `REG` - regular file
-* `DIR` - directory
-* `LNK` - hard link
-* `SYMLNK` - symbolic link
+- `REG` - regular file
+- `DIR` - directory
+- `LNK` - hard link
+- `SYMLNK` - symbolic link
 
 ```python
 >>> client.create_file('MyData', file_path='dir3', file_type='DIR')
@@ -302,3 +309,9 @@ This method allows to rename a file or directory, also between different data sp
 ```python
 >>> client.move('MyData', 'file.txt', 'MyData', 'file_new.txt')
 ```
+
+## References
+
+- [PyFilesystem2](https://github.com/PyFilesystem/pyfilesystem2)
+- [OnedataRESTFS](https://github.com/onedata/onedatarestfs)
+- [Onedata access tokens](https://onedata.org/#/home/documentation/21.02/user-guide/tokens[gui-guide].html)
