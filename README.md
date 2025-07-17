@@ -120,7 +120,12 @@ directory or entire space):
 
 ### Get attributes
 
-This method returns attributes for specified space, directory or file.
+This method returns attributes for specified space, directory or file. It accepts the following optional keyword arguments:
+
+- `attributes` - list of specific attributes to return
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
 
 For example, to get attributes for `MyData` space:
 
@@ -170,7 +175,13 @@ To get attributes for a specific file, we need to also specify the path within t
 
 ### Set attributes
 
-This method allows to modify selected file or directory attributes, for example we can modify file permissions:
+This method allows to modify selected file or directory attributes, specified by `attributes` arguments as a dictionary. It accepts the following optional keyword arguments:
+
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+For example we can modify file permissions:
 
 <!-- TODO VFS-12878: Replace mode with posixPermissions after VFS-12878 is fixed -->
 ```python
@@ -183,7 +194,14 @@ This method allows to modify selected file or directory attributes, for example 
 
 ### List children
 
-Returns the list of direct children of a given directory (or data space):
+Returns the list of direct children of a given directory (specified by `file_path` or `file_id` argument). It accepts the following optional keyword arguments:
+
+- `attributes` - list of Onedata file attributes to return (e.g. `size`)
+- `limit` - maximum number of children to return (default: 1000)
+- `continuation_token` - token for pagination to get next page of results
+- `file_path` - path to the directory relative to the space
+- `file_id` - unique file ID of the directory
+- `provider` - specific Oneprovider to use for the operation
 
 ```python
 >>> client.list_children('MyData', file_path='dir1', limit=5)
@@ -215,7 +233,15 @@ and continue as long as `isLast` returns `False`.
 
 ### Get file or directory contents
 
-This method allows to read an entire file:
+This method allows to read an entire file. It accepts the following optional keyword arguments:
+
+- `offset` - byte offset to start reading from (default: 0)
+- `size` - number of bytes to read
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+For example, to read an entire file:
 
 ```python
 >>> client.get_file_content('MyData', file_path='file.txt')
@@ -247,7 +273,14 @@ of a temporary download session.
 
 ### Iter file content
 
-This method returns a Python iterator, allowing to read file in chunks of specified size:
+This method returns a Python iterator, allowing to read file in chunks of specified size. It accepts the following optional keyword arguments:
+
+- `chunk_size` - size of each chunk in bytes (default: 1048576 = 1 MB)
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+For example:
 
 ```python
 >>> stream = client.iter_file_content('MyData', chunk_size=2, file_path='file.txt')
@@ -259,7 +292,12 @@ This method returns a Python iterator, allowing to read file in chunks of specif
 
 ### Put file content
 
-This method allows to append or modify the contents of a file. The file must exist beforehand.
+This method allows to append or modify the contents of a file. The file must exist beforehand. It accepts the following optional keyword arguments:
+
+- `offset` - byte offset to start writing at
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
 
 ```python
 >>> client.create_file('MyData', file_path='file2.txt')
@@ -281,19 +319,17 @@ b'ABEFGH'
 
 ### Create file or directory
 
-Creates a file at path specified in the URL, relative to the base directory given in the
-id parameter (see the parameter description for details). If the parent path does not
-exist and create_parents flag is set to true, the operation will attempt to create
-intermediate parent directories.
+Creates a file at path specified by `file_path` argument. Additionally it accepts the following optional keyword arguments:
+
+- `file_type` - The file type to create, it can be one of:
+  - `REG` - regular file
+  - `DIR` - directory
+  - `LNK` - hard link
+  - `SYMLNK` - symbolic link
+- `create_parents` - If the parent path does not exist and  argument is set to true, the operation will attempt to create intermediate parent directories.
+- `mode` - integer argument can be passed to specify POSIX permissions for the file, (e.g. `0665`).
 
 If the file already exists, the operation fails with an error.
-
-The file type can be one of:
-
-- `REG` - regular file
-- `DIR` - directory
-- `LNK` - hard link
-- `SYMLNK` - symbolic link
 
 ```python
 >>> client.create_file('MyData', file_path='dir3', file_type='DIR')
@@ -309,10 +345,13 @@ The file type can be one of:
 
 ### Remove
 
-Removes file or directory specified by `file_path` (or `file_id`) argument. In case of a
-directory, all its children are recursively removed - note that the operation will fail
-part-way if the client does not have permissions to remove some of the nested
-files/directories.
+Removes file or directory specified by `file_path` (or `file_id`) argument. It accepts the following optional keyword arguments:
+
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+In case of a directory, all its children are recursively removed - note that the operation will fail part-way if the client does not have permissions to remove some of the nested files/directories.
 
 ```python
 >>> client.remove('MyData', file_path='dir3/file3.txt')
@@ -322,11 +361,15 @@ files/directories.
 
 ### Move
 
-This method allows to rename a file or directory, also between different data spaces:
+This method allows to rename a file or directory within a space. It accepts the following optional keyword arguments:
+
+- `provider` - specific Oneprovider to use for the operation
 
 ```python
 >>> client.move('MyData', 'file.txt', 'MyData', 'file_new.txt')
 ```
+
+To move file between different spaces, it has to be copied using read and write operations and then removed from the old location (or use [OnedataRESTFS](https://github.com/onedata/onedatarestfs)).
 
 ## References
 
