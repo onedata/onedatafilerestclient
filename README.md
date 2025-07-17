@@ -3,10 +3,10 @@
 `OnedataFileRESTClient` is a pure Python client to the Onedata file REST API. It offers basic
 operations on files as a concise, low-level library. Most users will probably be more
 interested in [OnedataRESTFS](https://github.com/onedata/onedatarestfs) library, which is
-a plugin for [PyFilesystem](https://github.com/PyFilesystem/pyfilesystem2), implemented
+a plugin for [PyFilesystem2](https://github.com/PyFilesystem/pyfilesystem2), implemented
 on top of this library, providing more stable and user friendly interface.
 
-Supported Onezone versions: `>= 21.02.5`
+Supported Onezone versions: `>= 21.02.5`.
 
 Supported Oneprovider versions: `>= 21.02.5`.
 
@@ -28,7 +28,7 @@ In order to use the `OnedataFileRESTClient` we need to first import necessary mo
 then create an instance of `OnedataFileRESTClient`, providing at least two required parameters:
 
 - `onedata_onezone_host` – Hostname of the Onezone instance to connect to
-- `onedata_access_token` – Onedata access token with Oneprovider REST API privileges (see [Access tokens](https://onedata.org/#/home/documentation/21.02/user-guide/tokens[gui-guide].html))
+- `onedata_access_token` – Onedata access token with Oneprovider REST API privileges (see [Access tokens guide](https://onedata.org/#/home/documentation/21.02/user-guide/tokens[gui-guide].html))
 
 ```python
 from onedatafilerestclient import *
@@ -48,9 +48,11 @@ For most methods of `OnedataFileRESTClient`, there are following common conventi
 passing arguments to methods which perform operations on Onedata filesystem:
 
 - first argument is the name of the data space
-- next arguments are keyword arguments, include `file_path` or `file_id`, which need
-  to be specified separately from the first argument and contain path relative to the
-  space directory (for `file_path`) or file ID (for `file_id`)
+- next arguments are keyword arguments:
+  - at least one keyword argument `file_path` or `file_id`, which need
+    to be specified separately from the first argument and contain path relative to the
+    space directory (for `file_path`) or file ID (for `file_id`)
+  - argument specific to particular operation
 
 ### Get token scope
 
@@ -59,14 +61,30 @@ including some attributes such a list of Oneprovider instances supporting each s
 
 ```python
 >>> client.get_token_scope()
-{'validUntil': None,
- 'dataAccessScope': {'spaces': {'67ae143419b1838715505bbad66096d2chfcf2': {'supports': {'71eb92fb45b414fc87d47aab3cf4a6b8ch836c': {'readonly': False}},
-                                                                           'name': 'MyData'}},
-                     'readonly': False,
-                     'providers': {'71eb92fb45b414fc87d47aab3cf4a6b8ch836c': {'version': '21.02.8',
-                                                                              'online': True,
-                                                                              'name': 'oneprovider1',
-                                                                              'domain': 'oneprovider1.example.com'}}}}
+{
+    'validUntil': None,
+    'dataAccessScope': {
+        'spaces': {
+            '67ae143419b1838715505bbad66096d2chfcf2': {
+                'supports': {
+                    '71eb92fb45b414fc87d47aab3cf4a6b8ch836c': {
+                        'readonly': False
+                    }
+                },
+                'name': 'MyData'
+            }
+        },
+        'readonly': False,
+        'providers': {
+            '71eb92fb45b414fc87d47aab3cf4a6b8ch836c': {
+                'version': '21.02.8',
+                'online': True,
+                'name': 'oneprovider1',
+                'domain': 'oneprovider1.example.com'
+            }
+        }
+    }
+}
 ```
 
 ### List spaces
@@ -181,7 +199,7 @@ Returns the list of direct children of a given directory (or data space):
 To get the next page of result, we need to pass the `nextPageToken` as `continuation_token` argument:
 
 ```python
->>> client.list_children('MyData', file_path='dir1', limit=5,continuation_token='g2gEZAAQcGFnaW5hdGlvbl90b2tlbmgDZAAKbGlzdF9pbmRleG0AAAAKZmlsZTEyLnR4dG0AAAAmNzFlYjkyZmI0NWI0MTRmYzg3ZDQ3YWFiM2NmNGE2YjhjaDgzNmNkAAl1bmRlZmluZWRkAARtb3Jl')
+>>> client.list_children('MyData', file_path='dir1', limit=5, continuation_token='g2gEZAAQcGFnaW5hdGlvbl90b2tlbmgDZAAKbGlzdF9pbmRleG0AAAAKZmlsZTEyLnR4dG0AAAAmNzFlYjkyZmI0NWI0MTRmYzg3ZDQ3YWFiM2NmNGE2YjhjaDgzNmNkAAl1bmRlZmluZWRkAARtb3Jl')
 {'nextPageToken': 'g2gEZAAQcGFnaW5hdGlvbl90b2tlbmgDZAAKbGlzdF9pbmRleG0AAAAKZmlsZTE3LnR4dG0AAAAmNzFlYjkyZmI0NWI0MTRmYzg3ZDQ3YWFiM2NmNGE2YjhjaDgzNmNkAAl1bmRlZmluZWRkAARtb3Jl',
  'isLast': False,
  'children': [{'name': 'file13.txt', 'type': 'REG'},
