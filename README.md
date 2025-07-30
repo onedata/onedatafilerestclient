@@ -18,7 +18,7 @@ You can install `OnedataFileRESTClient` from PyPI as follows:
 pip install onedatafilerestclient
 ```
 
-> Make sure to install a version **not newer** than the Onedata Onezone service in your deployment.
+> Make sure to install a version **not newer** than the Onedata Onezone service in your deployment. New versions of this library are published only when some changes are made or a new major Onedata release is published, so there might not be an exact version matching current Onedata release.
 
 ## Usage
 
@@ -257,9 +257,7 @@ b'ST'
 
 If requested file is a directory, this method returns a TAR archive with its contents.
 Any nested files or subdirectories, to which the client does not have access (e.g. due to
-insufficient POSIX permissions or ACLs) are omitted in the resulting archive. Request for
-directory download results in a redirection URL (in Location header) that contains the ID
-of a temporary download session.
+insufficient POSIX permissions or ACLs) are omitted in the resulting archive.
 
 ```python
 >>> tar_bytes = client.get_file_content('MyData', file_path='dir1')
