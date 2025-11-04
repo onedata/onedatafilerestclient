@@ -388,6 +388,11 @@ class OnedataFileRESTClient:
         provider: Optional[SpaceSupportingProvider] = None,
     ) -> None:
         """Rename a file or directory."""
+        if src_space_specifier != dst_space_specifier:
+            raise AttributeError(
+                "Moving files between different spaces is not supported"
+            )
+
         dst_space_canonical_fqn = self._oz_client.ensure_space_canonical_fqn(
             dst_space_specifier
         )

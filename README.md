@@ -1,13 +1,376 @@
 # OnedataFileRESTClient
 
-OnedataFileRESTClient is a Python client to the Onedata file REST API [Onedata REST API].
-Supported Onezone versions: >= 21.02.4
-Supported Oneprovider versions: >= 21.02.1
+`OnedataFileRESTClient` is a pure Python client to the Onedata file REST API. It offers basic
+operations on files as a concise, low-level library. Most users will probably be more
+interested in [OnedataRESTFS](https://github.com/onedata/onedatarestfs) library, which is
+a plugin for [PyFilesystem2](https://github.com/PyFilesystem/pyfilesystem2), implemented
+on top of this library, providing more stable and user friendly interface.
 
-## Installing
+Supported Onezone versions: `>= 21.02.5`.
 
-You can install OnedataFileRESTClient from pip as follows:
+Supported Oneprovider versions: `>= 21.02.5`.
 
-```
+## Installation
+
+You can install `OnedataFileRESTClient` from PyPI as follows:
+
+```bash
 pip install onedatafilerestclient
 ```
+
+> Make sure to install a version **not newer** than the Onedata Onezone service in your deployment. New versions of this library are published only when some changes are made or a new major Onedata release is published, so there might not be an exact version matching current Onedata release.
+
+## Usage
+
+### Creating a `OnedataFileRESTClient` client instance
+
+In order to use the `OnedataFileRESTClient` we need to first import necessary module and
+then create an instance of `OnedataFileRESTClient`, providing at least two required parameters:
+
+- `onedata_onezone_host` – Hostname of the Onezone instance to connect to
+- `onedata_access_token` – Onedata access token with Oneprovider REST API privileges (see [Access tokens guide](https://onedata.org/#/home/documentation/21.02/user-guide/tokens[gui-guide].html))
+
+```python
+from onedatafilerestclient import *
+
+onedata_onezone_host = 'onezone.example.com'
+onedata_access_token = 'MDAzM2xvY2F00aW9uIGRldi1vbmV6b25lLmRlZmF1bHQuc3...'
+client = OnedataFileRESTClient(onedata_onezone_host, onedata_access_token)
+```
+
+The `OnedataFileRESTClient` class provides the following operations (examples below assume
+`OnedataFileRESTClient` has been setup as shown above). For more details you can check the
+method documentation in the implementation of the `OnedataFileRESTClient` on [GitHub](https://github.com/onedata/onedatafilerestclient/blob/develop/onedatafilerestclient/onedata_file_rest_client.py).
+
+### Common API conventions
+
+For most methods of `OnedataFileRESTClient`, there are following common conventions for
+passing arguments to methods which perform operations on Onedata filesystem:
+
+- first argument is the name of the data space
+- next arguments are keyword arguments:
+  - at least one keyword argument `file_path` or `file_id`, which need
+    to be specified separately from the first argument and contain path relative to the
+    space directory (for `file_path`) or file ID (for `file_id`)
+  - argument specific to particular operation
+
+### Get token scope
+
+Returns a dictionary with a map of data spaces available through specified access token,
+including some attributes such a list of Oneprovider instances supporting each space:
+
+```python
+>>> client.get_token_scope()
+{
+    'validUntil': None,
+    'dataAccessScope': {
+        'spaces': {
+            '67ae143419b1838715505bbad66096d2chfcf2': {
+                'supports': {
+                    '71eb92fb45b414fc87d47aab3cf4a6b8ch836c': {
+                        'readonly': False
+                    }
+                },
+                'name': 'MyData'
+            }
+        },
+        'readonly': False,
+        'providers': {
+            '71eb92fb45b414fc87d47aab3cf4a6b8ch836c': {
+                'version': '21.02.8',
+                'online': True,
+                'name': 'oneprovider1',
+                'domain': 'oneprovider1.example.com'
+            }
+        }
+    }
+}
+```
+
+### List spaces
+
+Returns the list of data space names effectively available to the user based on specified
+access token.
+
+```python
+>>> client.list_spaces()
+['MyData']
+```
+
+### Get space id
+
+Resolves a space name to a an internal Onedata space ID:
+
+```python
+>>> client.get_space_id('MyData')
+'67ae143419b1838715505bbad66096d2chfcf2'
+```
+
+### Get file id
+
+Resolves a path to a directory or file to a unique file ID (file here can refer to file,
+directory or entire space):
+
+```python
+>>> client.get_file_id('MyData')
+'000000000058E0AC677569642373706163655F3637616531343334313962313833383731353530356262616436363039366432636866636632233637616531343334313962313833383731353530356262616436363039366432636866636632'
+```
+
+> Corresponding API endpoint is [lookup_file_id](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/lookup_file_id).
+
+### Get attributes
+
+This method returns attributes for specified space, directory or file. It accepts the following optional keyword arguments:
+
+- `attributes` - list of specific attributes to return
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+For example, to get attributes for `MyData` space:
+
+```python
+>>> client.get_attributes('MyData')
+{'fileId': '000000000058E0AC677569642373706163655F3637616531343334313962313833383731353530356262616436363039366432636866636632233637616531343334313962313833383731353530356262616436363039366432636866636632',
+ 'parentFileId': None,
+ 'name': 'MyData',
+ 'posixPermissions': '775',
+ 'atime': 1748857564,
+ 'mtime': 1748856735,
+ 'ctime': 1748856735,
+ 'type': 'DIR',
+ 'size': 0,
+ 'directShareIds': [],
+ 'index': 'g2gDZAAKbGlzdF9pbmRleG0AAAAmNjdhZTE0MzQxOWIxODM4NzE1NTA1YmJhZDY2MDk2ZDJjaGZjZjJkAAl1bmRlZmluZWQ',
+ 'displayGid': 0,
+ 'displayUid': 0,
+ 'ownerUserId': 'VIRTUAL_SPACE_OWNER_67ae143419b1838715505bbad66096d2chfcf2',
+ 'originProviderId': '71eb92fb45b414fc87d47aab3cf4a6b8ch836c',
+ 'hardlinkCount': 1}
+```
+
+To get attributes for a specific file, we need to also specify the path within the space:
+
+```python
+>>> client.get_attributes('MyData', file_path='/file.txt')
+{'fileId': '000000000052E01B67756964236432666666313638346261626132626630623661333262353638653733333633636866636632233637616531343334313962313833383731353530356262616436363039366432636866636632',
+ 'parentFileId': '000000000058E0AC677569642373706163655F3637616531343334313962313833383731353530356262616436363039366432636866636632233637616531343334313962313833383731353530356262616436363039366432636866636632',
+ 'name': 'file.txt',
+ 'posixPermissions': '664',
+ 'atime': 1748862683,
+ 'mtime': 1748862675,
+ 'ctime': 1748862675,
+ 'type': 'REG',
+ 'size': 4,
+ 'directShareIds': [],
+ 'index': 'g2gDZAAKbGlzdF9pbmRleG0AAAAIZmlsZS50eHRtAAAAJjcxZWI5MmZiNDViNDE0ZmM4N2Q0N2FhYjNjZjRhNmI4Y2g4MzZj',
+ 'displayGid': 0,
+ 'displayUid': 1976898,
+ 'ownerUserId': '52d4038aab393bc675783924836879e9ch393b',
+ 'originProviderId': '71eb92fb45b414fc87d47aab3cf4a6b8ch836c',
+ 'hardlinkCount': 1}
+```
+
+> Corresponding API endpoint is [get_args](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/get_attrs).
+
+### Set attributes
+
+This method allows to modify selected file or directory attributes, specified by `attributes` arguments as a dictionary. It accepts the following optional keyword arguments:
+
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+For example we can modify file permissions:
+
+<!-- TODO VFS-12878: Replace mode with posixPermissions after VFS-12878 is fixed -->
+```python
+>>> client.set_attributes('MyData', file_path='/file.txt', attributes={'mode': '666'})
+>>> client.get_attributes('MyData', file_path='/file.txt', attributes=['posixPermissions'])
+{'posixPermissions': '666'}
+```
+
+> Corresponding API endpoint is [set_args](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/set_attrs).
+
+### List children
+
+Returns the list of direct children of a given directory (specified by `file_path` or `file_id` argument). It accepts the following optional keyword arguments:
+
+- `attributes` - list of Onedata file attributes to return (e.g. `size`)
+- `limit` - maximum number of children to return (default: 1000)
+- `continuation_token` - token for pagination to get next page of results
+- `file_path` - path to the directory relative to the space
+- `file_id` - unique file ID of the directory
+- `provider` - specific Oneprovider to use for the operation
+
+```python
+>>> client.list_children('MyData', file_path='dir1', limit=5)
+{'nextPageToken': 'g2gEZAAQcGFnaW5hdGlvbl90b2tlbmgDZAAKbGlzdF9pbmRleG0AAAAKZmlsZTEyLnR4dG0AAAAmNzFlYjkyZmI0NWI0MTRmYzg3ZDQ3YWFiM2NmNGE2YjhjaDgzNmNkAAl1bmRlZmluZWRkAARtb3Jl',
+ 'isLast': False,
+ 'children': [{'name': 'file0.txt', 'type': 'REG'},
+              {'name': 'file1.txt', 'type': 'REG'},
+              {'name': 'file10.txt', 'type': 'REG'},
+              {'name': 'file11.txt', 'type': 'REG'},
+              {'name': 'file12.txt', 'type': 'REG'}]}
+```
+
+To get the next page of result, we need to pass the `nextPageToken` as `continuation_token` argument:
+
+```python
+>>> client.list_children('MyData', file_path='dir1', limit=5, continuation_token='g2gEZAAQcGFnaW5hdGlvbl90b2tlbmgDZAAKbGlzdF9pbmRleG0AAAAKZmlsZTEyLnR4dG0AAAAmNzFlYjkyZmI0NWI0MTRmYzg3ZDQ3YWFiM2NmNGE2YjhjaDgzNmNkAAl1bmRlZmluZWRkAARtb3Jl')
+{'nextPageToken': 'g2gEZAAQcGFnaW5hdGlvbl90b2tlbmgDZAAKbGlzdF9pbmRleG0AAAAKZmlsZTE3LnR4dG0AAAAmNzFlYjkyZmI0NWI0MTRmYzg3ZDQ3YWFiM2NmNGE2YjhjaDgzNmNkAAl1bmRlZmluZWRkAARtb3Jl',
+ 'isLast': False,
+ 'children': [{'name': 'file13.txt', 'type': 'REG'},
+              {'name': 'file14.txt', 'type': 'REG'},
+              {'name': 'file15.txt', 'type': 'REG'},
+              {'name': 'file16.txt', 'type': 'REG'},
+              {'name': 'file17.txt', 'type': 'REG'}]}
+```
+
+and continue as long as `isLast` returns `False`.
+
+> Corresponding API endpoint is [list_children](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/list_children).
+
+### Get file or directory contents
+
+This method allows to read an entire file. It accepts the following optional keyword arguments:
+
+- `offset` - byte offset to start reading from (default: 0)
+- `size` - number of bytes to read
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+For example, to read an entire file:
+
+```python
+>>> client.get_file_content('MyData', file_path='file.txt')
+b'TEST'
+```
+
+or specified range in one request:
+
+```python
+>>> client.get_file_content('MyData', file_path='file.txt', offset=2, size=2)
+b'ST'
+```
+
+If requested file is a directory, this method returns a TAR archive with its contents.
+Any nested files or subdirectories, to which the client does not have access (e.g. due to
+insufficient POSIX permissions or ACLs) are omitted in the resulting archive.
+
+```python
+>>> tar_bytes = client.get_file_content('MyData', file_path='dir1')
+>>> tar = tarfile.open(fileobj=io.BytesIO(tar_bytes))
+>>> files = [entry.name for entry in tar.getmembers()]
+>>> files[0:5]
+['dir1', 'dir1/file0.txt', 'dir1/file1.txt', 'dir1/file10.txt', 'dir1/file11.txt']
+```
+
+> Corresponding API endpoint is [download_file_content_by_path](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/download_file_content_by_path).
+
+### Iter file content
+
+This method returns a Python iterator, allowing to read file in chunks of specified size. It accepts the following optional keyword arguments:
+
+- `chunk_size` - size of each chunk in bytes (default: 1048576 = 1 MB)
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+For example:
+
+```python
+>>> stream = client.iter_file_content('MyData', chunk_size=2, file_path='file.txt')
+>>> [chunk for chunk in stream]
+[b'TE', b'ST']
+```
+
+> Corresponding API endpoint is [download_file_content_by_path](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/download_file_content_by_path).
+
+### Put file content
+
+This method allows to append or modify the contents of a file. The file must exist beforehand. It accepts the following optional keyword arguments:
+
+- `offset` - byte offset to start writing at
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+```python
+>>> client.create_file('MyData', file_path='file2.txt')
+'0000000000527B5767756964236333633832643730316165633034333139666634666161353331363861393465636866636632233637616531343334313962313833383731353530356262616436363039366432636866636632'
+>>> client.put_file_content('MyData', b'ABCD', file_path='file2.txt')
+>>> client.get_file_content('MyData', file_path='file2.txt')
+b'ABCD'
+```
+
+It's also possible to specify an offset after which to write the content in the file:
+
+```python
+>>> client.put_file_content('MyData', b'EFGH', file_path='file2.txt', offset=2)
+>>> client.get_file_content('MyData', file_path='file2.txt')
+b'ABEFGH'
+```
+
+> Corresponding API endpoint is [update_file_content](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/update_file_content).
+
+### Create file or directory
+
+Creates a file at path specified by `file_path` argument. Additionally it accepts the following optional keyword arguments:
+
+- `file_type` - The file type to create, it can be one of:
+  - `REG` - regular file
+  - `DIR` - directory
+  - `LNK` - hard link
+  - `SYMLNK` - symbolic link
+- `create_parents` - If the parent path does not exist and  argument is set to true, the operation will attempt to create intermediate parent directories.
+- `mode` - integer argument can be passed to specify POSIX permissions for the file, (e.g. `0665`).
+
+If the file already exists, the operation fails with an error.
+
+```python
+>>> client.create_file('MyData', file_path='dir3', file_type='DIR')
+'000000000052DBCF67756964236462363362636366653466373662336464333334316235396537653636613564636861383337233637616531343334313962313833383731353530356262616436363039366432636866636632'
+```
+
+```python
+>>> client.create_file('MyData', file_path='dir3/file3.txt')
+'000000000052EEA567756964233236346335393335643762386238363731363261663062393761303363653532636861383337233637616531343334313962313833383731353530356262616436363039366432636866636632'
+```
+
+> Corresponding API endpoint is [create_file](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/create_file).
+
+### Remove
+
+Removes file or directory specified by `file_path` (or `file_id`) argument. It accepts the following optional keyword arguments:
+
+- `file_path` - path to the file relative to the space
+- `file_id` - unique file ID
+- `provider` - specific Oneprovider to use for the operation
+
+In case of a directory, all its children are recursively removed - note that the operation will fail part-way if the client does not have permissions to remove some of the nested files/directories.
+
+```python
+>>> client.remove('MyData', file_path='dir3/file3.txt')
+```
+
+> Corresponding API endpoint is [remove_file_at_path](https://onedata.org/#/home/api/stable/oneprovider?anchor=operation/remove_file_at_path).
+
+### Move
+
+This method allows to rename a file or directory within a space. It accepts the following optional keyword arguments:
+
+- `provider` - specific Oneprovider to use for the operation
+
+```python
+>>> client.move('MyData', 'file.txt', 'MyData', 'file_new.txt')
+```
+
+To move file between different spaces, it has to be copied using read and write operations and then removed from the old location (or use [OnedataRESTFS](https://github.com/onedata/onedatarestfs)).
+
+## References
+
+- [PyFilesystem2](https://github.com/PyFilesystem/pyfilesystem2)
+- [OnedataRESTFS](https://github.com/onedata/onedatarestfs)
+- [Onedata access tokens](https://onedata.org/#/home/documentation/21.02/user-guide/tokens[gui-guide].html)
