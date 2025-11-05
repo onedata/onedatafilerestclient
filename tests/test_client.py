@@ -743,9 +743,13 @@ def test_move_between_spaces(client: OnedataFileRESTClient):
     assert len(res["children"]) == 1
 
     with pytest.raises(AttributeError) as exc_info:
-        client.move(src_space_specifier, file_path, dst_space_specifier, target_file_path)
+        client.move(
+            src_space_specifier, file_path, dst_space_specifier, target_file_path
+        )
 
-    assert 'Moving files between different spaces is not supported' in str(exc_info.value)
+    assert "Moving files between different spaces is not supported" in str(
+        exc_info.value
+    )
 
 
 def _random_space_specifier(space_name, client):
@@ -762,7 +766,7 @@ def _pack_space_fqn(space_name, space_id):
 
 
 def _ensure_fqn(space_name_or_fqn, client):
-    if '@' in space_name_or_fqn:
+    if "@" in space_name_or_fqn:
         return space_name_or_fqn
 
     return _get_space_fqn(space_name_or_fqn, client)

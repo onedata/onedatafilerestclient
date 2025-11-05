@@ -8,7 +8,7 @@ import json
 import sys
 import typing
 from functools import partial, wraps
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import requests.exceptions
 
@@ -65,6 +65,53 @@ class ListChildrenResult(TypedDict):
     nextPageToken: Optional[str]
 
 
+def _convert_space_specifiers_to_canonical(
+    func: Callable[..., Any],
+    space_specifier: SpaceSpecifier,
+    args: Tuple[Any, ...],
+    kwargs: Dict[str, Any],
+    oz_client: OnezoneRESTClient,
+) -> Tuple[str, List[Any], Dict[str, Any]]:
+    """Convert all SpaceSpecifier arguments to canonical form.
+
+    Returns:
+        Tuple of (first_space_canonical_fqn, converted_args_list, converted_kwargs)
+    """
+    sig = inspect.signature(func)
+    args_list = list(args)
+
+    # Convert the first space_specifier
+    space_canonical_fqn = oz_client.ensure_space_canonical_fqn(space_specifier)
+
+    # Convert additional SpaceSpecifier arguments
+    for i, (param_name, param) in enumerate(sig.parameters.items()):
+        if i < 2:  # Skip 'self' and 'space_specifier' parameters
+            continue
+
+        # Check if parameter is annotated as SpaceSpecifier
+        if (
+            param.annotation == SpaceSpecifier
+            or param.annotation == "SpaceSpecifier"
+            or (
+                isinstance(param.annotation, str)
+                and "SpaceSpecifier" in param.annotation
+            )
+        ):
+            adjusted_index = i - 2  # Adjust for skipping 'self' and 'space_specifier'
+            if adjusted_index < len(args_list):
+                # Convert positional argument
+                original_value = args_list[adjusted_index]
+                canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
+                args_list[adjusted_index] = canonical_value
+            elif param_name in kwargs:
+                # Convert keyword argument
+                original_value = kwargs[param_name]
+                canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
+                kwargs[param_name] = canonical_value
+
+    return space_canonical_fqn, args_list, kwargs
+
+
 def _find_available_provider(
     func: Optional[Callable[..., Any]] = None, *, except_readonly: bool = False
 ) -> Callable[..., Any]:
@@ -87,35 +134,10 @@ def _find_available_provider(
         oz_client = self._oz_client
         provider_selector = self._provider_selector
 
-        # Get function signature to identify SpaceSpecifier parameters
-        sig = inspect.signature(func)
-        param_names = list(sig.parameters.keys())[2:]  # Skip 'self'
-
-        # Convert args to a mutable list
-        args_list = list(args)
-
         # Convert all SpaceSpecifier arguments to canonical form
-        space_canonical_fqn = oz_client.ensure_space_canonical_fqn(space_specifier)
-        for i, (param_name, param) in enumerate(sig.parameters.items()):
-            if i < 2:  # Skip 'self' and 'space_specifier' parameters
-                continue
-
-            # Check if parameter is annotated as SpaceSpecifier
-            if (param.annotation == SpaceSpecifier or
-                param.annotation == "SpaceSpecifier" or
-                (isinstance(param.annotation, str) and "SpaceSpecifier" in param.annotation)):
-
-                adjusted_index = i - 2  # Adjust for skipping 'self' and 'space_specifier'
-                if adjusted_index < len(args_list):
-                    # Convert positional argument
-                    original_value = args_list[adjusted_index]
-                    canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
-                    args_list[adjusted_index] = canonical_value
-                elif param_name in kwargs:
-                    # Convert keyword argument
-                    original_value = kwargs[param_name]
-                    canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
-                    kwargs[param_name] = canonical_value
+        space_canonical_fqn, args_list, kwargs = _convert_space_specifiers_to_canonical(
+            func, space_specifier, args, kwargs, oz_client
+        )
 
         provider = kwargs.get("provider")
         if provider is not None:
