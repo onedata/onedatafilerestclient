@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 import typing
@@ -86,11 +87,39 @@ def _find_available_provider(
         oz_client = self._oz_client
         provider_selector = self._provider_selector
 
+        # Get function signature to identify SpaceSpecifier parameters
+        sig = inspect.signature(func)
+        param_names = list(sig.parameters.keys())[2:]  # Skip 'self'
+
+        # Convert args to a mutable list
+        args_list = list(args)
+
+        # Convert all SpaceSpecifier arguments to canonical form
         space_canonical_fqn = oz_client.ensure_space_canonical_fqn(space_specifier)
+        for i, (param_name, param) in enumerate(sig.parameters.items()):
+            if i < 2:  # Skip 'self' and 'space_specifier' parameters
+                continue
+
+            # Check if parameter is annotated as SpaceSpecifier
+            if (param.annotation == SpaceSpecifier or
+                param.annotation == "SpaceSpecifier" or
+                (isinstance(param.annotation, str) and "SpaceSpecifier" in param.annotation)):
+
+                adjusted_index = i - 2  # Adjust for skipping 'self' and 'space_specifier'
+                if adjusted_index < len(args_list):
+                    # Convert positional argument
+                    original_value = args_list[adjusted_index]
+                    canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
+                    args_list[adjusted_index] = canonical_value
+                elif param_name in kwargs:
+                    # Convert keyword argument
+                    original_value = kwargs[param_name]
+                    canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
+                    kwargs[param_name] = canonical_value
 
         provider = kwargs.get("provider")
         if provider is not None:
-            return func(self, space_canonical_fqn, *args, **kwargs)
+            return func(self, space_canonical_fqn, *args_list, **kwargs)
 
         for provider in provider_selector.iter_available_space_providers(
             space_canonical_fqn,
@@ -99,14 +128,14 @@ def _find_available_provider(
         ):
             try:
                 kwargs["provider"] = provider
-                return func(self, space_canonical_fqn, *args, **kwargs)
+                return func(self, space_canonical_fqn, *args_list, **kwargs)
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.ReadTimeout,
             ):
                 provider_selector.blacklist(provider)
 
-        raise NoAvailableProviderForSpaceError(space_specifier)
+        raise NoAvailableProviderForSpaceError(space_canonical_fqn)
 
     return wrapper
 
@@ -393,9 +422,7 @@ class OnedataFileRESTClient:
                 "Moving files between different spaces is not supported"
             )
 
-        dst_space_canonical_fqn = self._oz_client.ensure_space_canonical_fqn(
-            dst_space_specifier
-        )
+        dst_space_canonical_fqn = dst_space_specifier
 
         provider = self._ensure_provider(provider)
         headers = {
