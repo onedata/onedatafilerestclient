@@ -8,7 +8,7 @@ import json
 import sys
 import typing
 from functools import partial, wraps
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import requests.exceptions
 
@@ -65,63 +65,57 @@ class ListChildrenResult(TypedDict):
     nextPageToken: Optional[str]
 
 
-def _convert_space_specifiers_to_canonical(
-    func: Callable[..., Any],
-    space_specifier: SpaceSpecifier,
-    args: Tuple[Any, ...],
-    kwargs: Dict[str, Any],
-    oz_client: OnezoneRESTClient,
-) -> Tuple[str, List[Any], Dict[str, Any]]:
-    """Convert all SpaceSpecifier arguments to canonical form.
-
-    Returns:
-        Tuple of (first_space_canonical_fqn, converted_args_list, converted_kwargs)
-    """
+def _resolve_space_specifiers(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator that converts all SpaceSpecifier arguments to canonical form."""
     sig = inspect.signature(func)
-    args_list = list(args)
 
-    # Convert the first space_specifier
-    space_canonical_fqn = oz_client.ensure_space_canonical_fqn(space_specifier)
+    # Build a set of parameter names that are annotated as SpaceSpecifier
+    # We need to use raw annotations because SpaceSpecifier is a TypeAlias to Union[str, str]
+    # which get_type_hints() resolves to just 'str'
+    space_specifier_params = {
+        param_name
+        for param_name, param in sig.parameters.items()
+        if _is_space_specifier_param(param)
+    }
 
-    # Convert additional SpaceSpecifier arguments
-    for i, (param_name, param) in enumerate(sig.parameters.items()):
-        if i < 2:  # Skip 'self' and 'space_specifier' parameters
-            continue
+    @wraps(func)
+    def wrapper(self: OnedataFileRESTClient, *args: Any, **kwargs: Any) -> Any:
+        ba = sig.bind(self, *args, **kwargs)
+        ba.apply_defaults()
 
-        # Check if parameter is annotated as SpaceSpecifier
-        if (
-            param.annotation == SpaceSpecifier
-            or param.annotation == "SpaceSpecifier"
-            or (
-                isinstance(param.annotation, str)
-                and "SpaceSpecifier" in param.annotation
-            )
-        ):
-            adjusted_index = i - 2  # Adjust for skipping 'self' and 'space_specifier'
-            if adjusted_index < len(args_list):
-                # Convert positional argument
-                original_value = args_list[adjusted_index]
-                canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
-                args_list[adjusted_index] = canonical_value
-            elif param_name in kwargs:
-                # Convert keyword argument
-                original_value = kwargs[param_name]
-                canonical_value = oz_client.ensure_space_canonical_fqn(original_value)
-                kwargs[param_name] = canonical_value
+        for param_name, value in ba.arguments.items():
+            if param_name in space_specifier_params:
+                # pylint: disable=W0212
+                ba.arguments[param_name] = self._oz_client.ensure_space_canonical_fqn(
+                    value
+                )
 
-    return space_canonical_fqn, args_list, kwargs
+        return func(*ba.args, **ba.kwargs)
+
+    return wrapper
+
+
+def _is_space_specifier_param(param: inspect.Parameter) -> bool:
+    """Check if a parameter is annotated as SpaceSpecifier."""
+
+    return (
+        param.annotation == SpaceSpecifier
+        or param.annotation == "SpaceSpecifier"
+        or (isinstance(param.annotation, str) and "SpaceSpecifier" in param.annotation)
+    )
 
 
 def _find_available_provider(
     func: Optional[Callable[..., Any]] = None, *, except_readonly: bool = False
 ) -> Callable[..., Any]:
+    """Decorator that finds an available provider and handles retries."""
     if func is None:
         return partial(_find_available_provider, except_readonly=except_readonly)
 
     @wraps(func)
     def wrapper(
         self: OnedataFileRESTClient,
-        space_specifier: SpaceSpecifier,
+        space_specifier: SpaceFQN,  # space_specifier (any SpaceSpecifier) is already converted to FQN by inner decorator
         *args: Any,
         **kwargs: Any,
     ) -> Any:
@@ -134,32 +128,28 @@ def _find_available_provider(
         oz_client = self._oz_client
         provider_selector = self._provider_selector
 
-        # Convert all SpaceSpecifier arguments to canonical form
-        space_canonical_fqn, args_list, kwargs = _convert_space_specifiers_to_canonical(
-            func, space_specifier, args, kwargs, oz_client
-        )
-
         provider = kwargs.get("provider")
         if provider is not None:
-            return func(self, space_canonical_fqn, *args_list, **kwargs)
+            return func(self, space_specifier, *args, **kwargs)
 
         for provider in provider_selector.iter_available_space_providers(
-            space_canonical_fqn,
+            space_specifier,
             oz_rest_client=oz_client,
             except_readonly=except_readonly,
         ):
             try:
                 kwargs["provider"] = provider
-                return func(self, space_canonical_fqn, *args_list, **kwargs)
+                return func(self, space_specifier, *args, **kwargs)
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.ReadTimeout,
             ):
                 provider_selector.blacklist(provider)
 
-        raise NoAvailableProviderForSpaceError(space_canonical_fqn)
+        raise NoAvailableProviderForSpaceError(space_specifier)
 
-    return wrapper
+    # Compose decorators: resolve space specifiers first, then find provider
+    return _resolve_space_specifiers(wrapper)
 
 
 class OnedataFileRESTClient:
