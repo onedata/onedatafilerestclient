@@ -8,10 +8,10 @@ import time
 from contextlib import contextmanager
 from typing import get_args
 
+import pytest
 import requests
 from packaging.version import Version  # type: ignore
 
-import pytest
 from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 from onedatafilerestclient.errors import (
     NoAvailableProviderForSpaceError,
@@ -422,7 +422,10 @@ def test_get_selected_attributes(client: OnedataFileRESTClient):
         }
     ):
         requested_attr_keys = list(
-            {*random.sample(_SNAKE_CASE_BASIC_FILE_ATTR_KEYS.keys(), 5), rand_attr_key}
+            {
+                *random.sample(list(_SNAKE_CASE_BASIC_FILE_ATTR_KEYS.keys()), 5),
+                rand_attr_key,
+            }
         )
 
         with pytest.raises(OnedataRESTError) as exc_info:

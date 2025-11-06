@@ -19,7 +19,7 @@ CLASSIFIERS = [
     "Topic :: System :: Filesystems",
 ]
 
-with open("README.md", "rt") as f:
+with open("README.md", "rt", encoding="utf-8") as f:
     DESCRIPTION = f.read()
 
 REQUIREMENTS = ["packaging", "requests", "typing-extensions>=4.3.0"]

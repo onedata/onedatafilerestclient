@@ -115,7 +115,7 @@ def _find_available_provider(
     @wraps(func)
     def wrapper(
         self: OnedataFileRESTClient,
-        space_specifier: SpaceFQN,  # space_specifier (any SpaceSpecifier) is already converted to FQN by inner decorator
+        space_specifier: SpaceFQN,  # space_specifier is already converted to FQN by inner decorator
         *args: Any,
         **kwargs: Any,
     ) -> Any:
@@ -255,7 +255,7 @@ class OnedataFileRESTClient:
         result = self._op_client.get(url, data=body).json()
         attrs = normalize_file_attrs_json(provider, attributes, result)
 
-        return typing.cast(FileAttrsJson, attrs)
+        return attrs
 
     @_find_available_provider(except_readonly=True)
     def set_attributes(
