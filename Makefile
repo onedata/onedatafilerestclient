@@ -1,6 +1,6 @@
 .PHONY: submodules venv init format black-check static-analysis type-check lint test-with-clean test-without-clean dist pypi_check pypi_upload
 
-STATIC_ANALYSER_IMAGE := "docker.onedata.org/python_static_analyser:v7"
+STATIC_ANALYSER_IMAGE := "docker.onedata.org/python_static_analyser:v8"
 SRC_FILES := onedatafilerestclient/ tests/ setup.py
 
 UID := $(shell id -u)
