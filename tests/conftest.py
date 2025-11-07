@@ -10,10 +10,9 @@ import os
 import time
 from typing import Final
 
+import pytest
 import requests
 from urllib3.util import connection
-
-import pytest
 
 from . import (
     ADMIN_PASSWORD,

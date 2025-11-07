@@ -20,6 +20,13 @@ parser = argparse.ArgumentParser(
 )
 
 parser.add_argument(
+    "--python-args",
+    action="store",
+    help="run specific python3 command in venv",
+    dest="python_args",
+)
+
+parser.add_argument(
     "--onenv-config",
     action="store",
     help="run tests in one-env environment",
@@ -142,7 +149,14 @@ if args.onenv_config is not None:
 
 
 command = """
-import os, subprocess, sys, stat, shutil
+import os, subprocess, sys, stat, shutil, venv
+
+venv_dir = "/tmp/venv"
+builder = venv.EnvBuilder(with_pip=True)
+builder.create(venv_dir)
+python_exec = os.path.join(venv_dir, "bin", "python")
+subprocess.run([python_exec, "-m", "pip", "install", "--upgrade", "pip"], check=True)
+subprocess.run([python_exec, "-m", "pip", "install", "-r", "./requirements-dev.txt"], check=True)
 
 if {shed_privileges}:
     os.environ['HOME'] = '/tmp'
@@ -156,7 +170,10 @@ tests = 'tests'
 if '{suites}':
     tests = '{suites}'
 
-command = ['python3'] + ['-m'] + ['tox'] +  ['-c'] + ['tox.ini'] + ['-e'] + [tests]
+command = [python_exec] + "{python_args}".split(' ')
+
+print('Executing command in venv: ' + str(command))
+
 ret = subprocess.call(command)
 sys.exit(ret)
 """
@@ -165,6 +182,7 @@ command = command.format(
     gid=os.getegid(),
     shed_privileges=(platform.system() == "Linux") and not args.no_shed_privileges,
     suites=",".join(args.suites),
+    python_args=args.python_args if args.python_args else  '-m tox -c tox.ini -e tests'
 )
 
 ret = docker.run(

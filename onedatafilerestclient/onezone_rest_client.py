@@ -187,6 +187,7 @@ class OnezoneRESTClient:
     def ensure_space_canonical_fqn(
         self, space_specifier: SpaceSpecifier
     ) -> SpaceCanonicalFQN:
+        """Convert a SpaceSpecifier to SpaceCanonicalFQN."""
         if is_canonical_fully_qualified_space_name(space_specifier):
             return space_specifier
 

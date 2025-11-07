@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 import typing
@@ -64,16 +65,57 @@ class ListChildrenResult(TypedDict):
     nextPageToken: Optional[str]
 
 
+def _resolve_space_specifiers(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator that converts all SpaceSpecifier arguments to canonical form."""
+    sig = inspect.signature(func)
+
+    # Build a set of parameter names that are annotated as SpaceSpecifier
+    # We need to use raw annotations because SpaceSpecifier is a TypeAlias to Union[str, str]
+    # which get_type_hints() resolves to just 'str'
+    space_specifier_params = {
+        param_name
+        for param_name, param in sig.parameters.items()
+        if _is_space_specifier_param(param)
+    }
+
+    @wraps(func)
+    def wrapper(self: OnedataFileRESTClient, *args: Any, **kwargs: Any) -> Any:
+        ba = sig.bind(self, *args, **kwargs)
+        ba.apply_defaults()
+
+        for param_name, value in ba.arguments.items():
+            if param_name in space_specifier_params:
+                # pylint: disable=W0212
+                ba.arguments[param_name] = self._oz_client.ensure_space_canonical_fqn(
+                    value
+                )
+
+        return func(*ba.args, **ba.kwargs)
+
+    return wrapper
+
+
+def _is_space_specifier_param(param: inspect.Parameter) -> bool:
+    """Check if a parameter is annotated as SpaceSpecifier."""
+
+    return (
+        param.annotation == SpaceSpecifier
+        or param.annotation == "SpaceSpecifier"
+        or (isinstance(param.annotation, str) and "SpaceSpecifier" in param.annotation)
+    )
+
+
 def _find_available_provider(
     func: Optional[Callable[..., Any]] = None, *, except_readonly: bool = False
 ) -> Callable[..., Any]:
+    """Decorator that finds an available provider and handles retries."""
     if func is None:
         return partial(_find_available_provider, except_readonly=except_readonly)
 
     @wraps(func)
     def wrapper(
         self: OnedataFileRESTClient,
-        space_specifier: SpaceSpecifier,
+        space_specifier: SpaceFQN,  # space_specifier is already converted to FQN by inner decorator
         *args: Any,
         **kwargs: Any,
     ) -> Any:
@@ -86,20 +128,18 @@ def _find_available_provider(
         oz_client = self._oz_client
         provider_selector = self._provider_selector
 
-        space_canonical_fqn = oz_client.ensure_space_canonical_fqn(space_specifier)
-
         provider = kwargs.get("provider")
         if provider is not None:
-            return func(self, space_canonical_fqn, *args, **kwargs)
+            return func(self, space_specifier, *args, **kwargs)
 
         for provider in provider_selector.iter_available_space_providers(
-            space_canonical_fqn,
+            space_specifier,
             oz_rest_client=oz_client,
             except_readonly=except_readonly,
         ):
             try:
                 kwargs["provider"] = provider
-                return func(self, space_canonical_fqn, *args, **kwargs)
+                return func(self, space_specifier, *args, **kwargs)
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.ReadTimeout,
@@ -108,7 +148,8 @@ def _find_available_provider(
 
         raise NoAvailableProviderForSpaceError(space_specifier)
 
-    return wrapper
+    # Compose decorators: resolve space specifiers first, then find provider
+    return _resolve_space_specifiers(wrapper)
 
 
 class OnedataFileRESTClient:
@@ -214,7 +255,7 @@ class OnedataFileRESTClient:
         result = self._op_client.get(url, data=body).json()
         attrs = normalize_file_attrs_json(provider, attributes, result)
 
-        return typing.cast(FileAttrsJson, attrs)
+        return attrs
 
     @_find_available_provider(except_readonly=True)
     def set_attributes(
@@ -393,9 +434,7 @@ class OnedataFileRESTClient:
                 "Moving files between different spaces is not supported"
             )
 
-        dst_space_canonical_fqn = self._oz_client.ensure_space_canonical_fqn(
-            dst_space_specifier
-        )
+        dst_space_canonical_fqn = dst_space_specifier
 
         provider = self._ensure_provider(provider)
         headers = {

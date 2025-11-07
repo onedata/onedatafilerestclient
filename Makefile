@@ -1,6 +1,6 @@
 .PHONY: submodules venv init format black-check static-analysis type-check lint test-with-clean test-without-clean dist pypi_check pypi_upload
 
-STATIC_ANALYSER_IMAGE := "docker.onedata.org/python_static_analyser:v7"
+STATIC_ANALYSER_IMAGE := "docker.onedata.org/python_static_analyser:v9"
 SRC_FILES := onedatafilerestclient/ tests/ setup.py
 
 UID := $(shell id -u)
@@ -51,6 +51,9 @@ format:
 ##
 ## Linting
 ##
+define run_python_command
+	./ct_run.py --verbose --image $(STATIC_ANALYSER_IMAGE) --no-clean --python-args $1
+endef
 
 black-check:
 	$(call print_target)
@@ -58,11 +61,11 @@ black-check:
 
 static-analysis:
 	$(call print_target)
-	$(call docker_run, pylint $(SRC_FILES) --rcfile=.pylintrc --recursive=y)
+	$(call run_python_command, "-m pylint $(SRC_FILES) --rcfile=.pylintrc --recursive=y")
 
 type-check:
 	$(call print_target)
-	$(call docker_run, python3 -m tox -e mypy)
+	$(call run_python_command, "-m tox -e mypy")
 
 lint: black-check static-analysis type-check
 	@:
@@ -107,5 +110,5 @@ assert_uploaded:
 	echo "Parsed version: $$VERSION"; \
 	SANITIZED_VERSION=$$($(call docker_run, python3 -c "from packaging.version import Version; print(Version('$$VERSION'))")); \
 	echo "Sanitized version: $$SANITIZED_VERSION"; \
-	$(call docker_run, python3 -m pip install $(PYPI_PACKAGE_NAME)==$$SANITIZED_VERSION) --dry-run || \
+	$(call docker_run, python3 -m pip install $(PYPI_PACKAGE_NAME)==$$SANITIZED_VERSION) --break-system-packages --dry-run || \
 	(echo "Version $$SANITIZED_VERSION of package $(PYPI_PACKAGE_NAME) is NOT available on PyPI."; exit 1)

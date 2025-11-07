@@ -8,10 +8,10 @@ import time
 from contextlib import contextmanager
 from typing import get_args
 
+import pytest
 import requests
 from packaging.version import Version  # type: ignore
 
-import pytest
 from onedatafilerestclient import OnedataFileRESTClient, OnedataRESTError
 from onedatafilerestclient.errors import (
     NoAvailableProviderForSpaceError,
@@ -215,13 +215,13 @@ def test_provider_selector(
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.get_attributes(space_specifier, file_id=file_id)
 
-        assert exc_info.value.args == (space_specifier,)
+        assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
     # even without mock providers should still be blacklisted
     with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
         client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
 
-    assert exc_info.value.args == (space_specifier,)
+    assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
     # but after blacklist time ends 'first_choice_provider' should be
     # again selected
@@ -290,13 +290,13 @@ def test_provider_selector_with_readonly_provider(
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.get_attributes(space_specifier, file_id=file_id)
 
-        assert exc_info.value.args == (space_specifier,)
+        assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
     # even without mock providers should still be blacklisted
     with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
         client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
 
-    assert exc_info.value.args == (space_specifier,)
+    assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
     # but after blacklist time ends 'first_choice_provider' should be
     # again selected for read and 'second_choice_provider' for write
@@ -309,7 +309,7 @@ def test_provider_selector_with_readonly_provider(
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
 
-        assert exc_info.value.args == (space_specifier,)
+        assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
     client.get_attributes(space_specifier, file_id=file_id)
     assert get_selected_provider_domain(False) == first_choice_provider
@@ -422,7 +422,10 @@ def test_get_selected_attributes(client: OnedataFileRESTClient):
         }
     ):
         requested_attr_keys = list(
-            {*random.sample(_SNAKE_CASE_BASIC_FILE_ATTR_KEYS.keys(), 5), rand_attr_key}
+            {
+                *random.sample(list(_SNAKE_CASE_BASIC_FILE_ATTR_KEYS.keys()), 5),
+                rand_attr_key,
+            }
         )
 
         with pytest.raises(OnedataRESTError) as exc_info:
@@ -723,6 +726,35 @@ def test_move(client: OnedataFileRESTClient):
     assert len(res["children"]) == 1
 
 
+def test_move_between_spaces(client: OnedataFileRESTClient):
+    """Test 'move' method throws when moving between spaces."""
+    src_space_specifier = _get_space_fqn(SPACE_KRK_PAR_NAME, client)
+    dst_space_specifier = _get_space_fqn(SPACE_PAR_NAME, client)
+
+    dir_path = random_path()
+    file_path = os.path.join(dir_path, random_str())
+    client.create_file(src_space_specifier, file_path, create_parents=True)
+
+    target_test_dir = random_path()
+    client.create_file(
+        src_space_specifier, target_test_dir, file_type="DIR", create_parents=True
+    )
+
+    target_file_path = os.path.join(target_test_dir, random_str())
+
+    res = client.list_children(src_space_specifier, file_path=dir_path)
+    assert len(res["children"]) == 1
+
+    with pytest.raises(AttributeError) as exc_info:
+        client.move(
+            src_space_specifier, file_path, dst_space_specifier, target_file_path
+        )
+
+    assert "Moving files between different spaces is not supported" in str(
+        exc_info.value
+    )
+
+
 def _random_space_specifier(space_name, client):
     space_fqn = _get_space_fqn(space_name, client)
     return random.choice([space_name, space_fqn])
@@ -734,6 +766,13 @@ def _get_space_fqn(space_name, client):
 
 def _pack_space_fqn(space_name, space_id):
     return f"{space_name}@{space_id}"
+
+
+def _ensure_fqn(space_name_or_fqn, client):
+    if "@" in space_name_or_fqn:
+        return space_name_or_fqn
+
+    return _get_space_fqn(space_name_or_fqn, client)
 
 
 def _random_file_selector(file_id, file_path):

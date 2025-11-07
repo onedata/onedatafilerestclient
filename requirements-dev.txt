@@ -4,8 +4,10 @@ flake8
 yapf
 isort
 mypy
-pytest
+pytest==8.4.2
 six
-pyyaml
+pyyaml==6.0.3
 typing-extensions>=4.3.0
 packaging
+pylint==4.0.2
+setuptools
