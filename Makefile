@@ -6,10 +6,6 @@ SRC_FILES := onedatafilerestclient/ tests/ setup.py
 UID := $(shell id -u)
 GID := $(shell id -g)
 
-define docker_root_run
-	docker run --rm -i -v $(CURDIR):$(CURDIR) -w $(CURDIR) $(STATIC_ANALYSER_IMAGE) $1
-endef
-
 define docker_run
 	docker run --rm -i -v $(CURDIR):$(CURDIR) -w $(CURDIR) -u $(UID):$(GID) $(STATIC_ANALYSER_IMAGE) $1
 endef
