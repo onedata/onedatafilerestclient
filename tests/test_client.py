@@ -182,7 +182,7 @@ def test_provider_selector(
     )
 
     # pylint: disable=W0212
-    client._provider_selector._blacklist_time_limit_ns = 1 * 10**9
+    client._provider_selector._blacklist_time_limit_ns = 10 * 10**9
 
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
     file_id = _create_and_sync_file_in_space(
@@ -209,23 +209,22 @@ def test_provider_selector(
 
     assert_selected_provider(second_choice_provider)
 
-    # with connection error raised by 'second_choice_provider' there should
-    # be no available providers left
+    # with connection error raised by 'second_choice_provider' client will
+    # try once again with the blacklisted provider (first_choice_provider),
+    # as it is the only one remaining on the list
     with _mock_http_client([second_choice_provider]):
+        assert_selected_provider(first_choice_provider)
+
+    # only if all active and blacklisted providers are unavailable, the error
+    # should be raised
+    with _mock_http_client([first_choice_provider, second_choice_provider]):
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.get_attributes(space_specifier, file_id=file_id)
 
         assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
-    # even without mock providers should still be blacklisted
-    with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-        client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
-
-    assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
-
-    # but after blacklist time ends 'first_choice_provider' should be
-    # again selected
-    time.sleep(2)
+    # but on the next try, again the blacklisted provider should be selected
+    # (since blacklist time has not yet expired and it is the fallback)
     assert_selected_provider(first_choice_provider)
 
 
@@ -284,27 +283,26 @@ def test_provider_selector_with_readonly_provider(
 
     assert_selected_provider(second_choice_provider)
 
-    # with connection error raised by 'second_choice_provider' there should
-    # be no available providers left
+    # with connection error raised by 'second_choice_provider' client will
+    # try once again with the blacklisted provider (first_choice_provider)
+    # for read, but write should fail because first_choice_provider is readonly
     with _mock_http_client([second_choice_provider]):
+        client.get_attributes(space_specifier, file_id=file_id)
+        assert get_selected_provider_domain(False) == first_choice_provider
+
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-            client.get_attributes(space_specifier, file_id=file_id)
+            client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
 
         assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
-    # even without mock providers should still be blacklisted
-    with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-        client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
-
-    assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
-
-    # but after blacklist time ends 'first_choice_provider' should be
-    # again selected for read and 'second_choice_provider' for write
-    time.sleep(2)
+    # even without mock, providers should still be blacklisted but because
+    # there are no other providers available, the blacklisted ones
+    # should be returned as fallback
     assert_selected_provider(first_choice_provider, second_choice_provider)
 
     # with connection error raised by 'second_choice_provider' there should
-    # be no available providers for write but read should still work
+    # be no available providers for write (first is readonly fallback),
+    # but read should still work using fallback
     with _mock_http_client([second_choice_provider]):
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
