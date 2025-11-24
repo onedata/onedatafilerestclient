@@ -317,8 +317,7 @@ def test_provider_selector_with_readonly_provider(
 
     # check that 'first_choice_provider' is indeed blacklisted
     # pylint: disable=W0212
-    provider_selector = client._provider_selector
-    assert provider_selector.is_blacklisted(first_choice_provider_id, space_id)
+    assert client._provider_selector.is_blacklisted(first_choice_provider_id, space_id)
 
     # with connection error raised by 'second_choice_provider' there should
     # be no available providers for write (first is readonly fallback),
@@ -335,7 +334,9 @@ def test_provider_selector_with_readonly_provider(
     # after blacklist time ends 'first_choice_provider' should be
     # again selected as the primary provider for read and write
     time.sleep(2)
-    assert not provider_selector.is_blacklisted(first_choice_provider_id, space_id)
+    assert not client._provider_selector.is_blacklisted(
+        first_choice_provider_id, space_id
+    )
     assert_selected_provider(first_choice_provider, second_choice_provider)
 
 
