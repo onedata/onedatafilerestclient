@@ -132,6 +132,8 @@ def _find_available_provider(
         if provider is not None:
             return func(self, space_specifier, *args, **kwargs)
 
+        space_id = oz_client.get_space_id(space_specifier)
+
         for provider in provider_selector.iter_available_space_providers(
             space_specifier,
             oz_rest_client=oz_client,
@@ -144,7 +146,7 @@ def _find_available_provider(
                 requests.exceptions.ConnectionError,
                 requests.exceptions.ReadTimeout,
             ):
-                provider_selector.blacklist(provider)
+                provider_selector.graylist(provider, space_id)
 
         raise NoAvailableProviderForSpaceError(space_specifier)
 

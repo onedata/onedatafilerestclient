@@ -182,7 +182,7 @@ def test_provider_selector(
     )
 
     # pylint: disable=W0212
-    client._provider_selector._blacklist_time_limit_ns = 1 * 10**9
+    client._provider_selector._graylist_time_limit_ns = 1 * 10**9
 
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
     file_id = _create_and_sync_file_in_space(
@@ -209,23 +209,37 @@ def test_provider_selector(
 
     assert_selected_provider(second_choice_provider)
 
-    # with connection error raised by 'second_choice_provider' there should
-    # be no available providers left
+    # with connection error raised by 'second_choice_provider' client will
+    # try once again with the blacklisted provider (first_choice_provider),
+    # as it is the only one remaining on the list
     with _mock_http_client([second_choice_provider]):
+        assert_selected_provider(first_choice_provider)
+
+    # only if all active and blacklisted providers are unavailable, the error
+    # should be raised
+    with _mock_http_client([first_choice_provider, second_choice_provider]):
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.get_attributes(space_specifier, file_id=file_id)
 
         assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
-    # even without mock providers should still be blacklisted
-    with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-        client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
+    # at this point 'first_choice_provider' should be blacklisted, but because
+    # there are no other providers available, it should be returned as fallback
+    # pylint: disable=W0212
+    provider_selector = client._provider_selector
+    first_provider_id = _get_provider_id(first_choice_provider)
+    space_id = client.get_space_id(space_specifier)
+    assert provider_selector.is_graylisted(first_provider_id, space_id)
 
-    assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
+    # but on the next try, again the blacklisted provider should be selected
+    # (since blacklist time has not yet expired and it is the fallback)
+    assert_selected_provider(first_choice_provider)
 
-    # but after blacklist time ends 'first_choice_provider' should be
-    # again selected
+    # after blacklist time ends 'first_choice_provider' should be
+    # again selected as the primary provider (not just fallback)
+    # we verify this by ensuring it is selected even if we don't force fallback
     time.sleep(2)
+    assert not provider_selector.is_graylisted(first_provider_id, space_id)
     assert_selected_provider(first_choice_provider)
 
 
@@ -252,7 +266,7 @@ def test_provider_selector_with_readonly_provider(
     )
 
     # pylint: disable=W0212
-    client._provider_selector._blacklist_time_limit_ns = 1 * 10**9  # 1 second
+    client._provider_selector._graylist_time_limit_ns = 1 * 10**9  # 1 second
 
     # mock token scope so that 'first_choice_provider' has readonly support
     _patch_provider_readonly_support(client, space_id, first_choice_provider_id)
@@ -284,27 +298,30 @@ def test_provider_selector_with_readonly_provider(
 
     assert_selected_provider(second_choice_provider)
 
-    # with connection error raised by 'second_choice_provider' there should
-    # be no available providers left
+    # with connection error raised by 'second_choice_provider' client will
+    # try once again with the blacklisted provider (first_choice_provider)
+    # for read, but write should fail because first_choice_provider is readonly
     with _mock_http_client([second_choice_provider]):
+        client.get_attributes(space_specifier, file_id=file_id)
+        assert get_selected_provider_domain(False) == first_choice_provider
+
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-            client.get_attributes(space_specifier, file_id=file_id)
+            client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
 
         assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
-    # even without mock providers should still be blacklisted
-    with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
-        client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
-
-    assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
-
-    # but after blacklist time ends 'first_choice_provider' should be
-    # again selected for read and 'second_choice_provider' for write
-    time.sleep(2)
+    # even without mock, providers should still be blacklisted but because
+    # there are no other providers available, the blacklisted ones
+    # should be returned as fallback
     assert_selected_provider(first_choice_provider, second_choice_provider)
 
+    # check that 'first_choice_provider' is indeed blacklisted
+    # pylint: disable=W0212
+    assert client._provider_selector.is_graylisted(first_choice_provider_id, space_id)
+
     # with connection error raised by 'second_choice_provider' there should
-    # be no available providers for write but read should still work
+    # be no available providers for write (first is readonly fallback),
+    # but read should still work using fallback
     with _mock_http_client([second_choice_provider]):
         with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
             client.set_attributes(space_specifier, {"mode": "777"}, file_id=file_id)
@@ -313,6 +330,14 @@ def test_provider_selector_with_readonly_provider(
 
     client.get_attributes(space_specifier, file_id=file_id)
     assert get_selected_provider_domain(False) == first_choice_provider
+
+    # after blacklist time ends 'first_choice_provider' should be
+    # again selected as the primary provider for read and write
+    time.sleep(2)
+    assert not client._provider_selector.is_graylisted(
+        first_choice_provider_id, space_id
+    )
+    assert_selected_provider(first_choice_provider, second_choice_provider)
 
 
 def test_provider_selector_with_offline_provider(onezone_ip, onezone_admin_token):
@@ -363,6 +388,40 @@ def test_provider_selector_with_dummy_provider(onezone_ip, onezone_admin_token):
     assert (
         _get_selected_provider(client_2, space_specifier).domain == PROVIDER_PAR_DOMAIN
     )
+
+
+def test_provider_selector_blacklist_isolation(onezone_ip, onezone_admin_token):
+    """Test that blacklisting a provider in one space does not affect other spaces."""
+    provider_krk = PROVIDER_KRK_DOMAIN
+    provider_par = PROVIDER_PAR_DOMAIN
+    provider_par_id = _get_provider_id(provider_par)
+
+    client = OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        [provider_par],
+        verify_ssl=False,
+    )
+    # pylint: disable=W0212
+    client._provider_selector._graylist_time_limit_ns = 10 * 10**9
+
+    space_krk_par_id = client.get_space_id(SPACE_KRK_PAR_NAME)
+    space_par_id = client.get_space_id(SPACE_PAR_NAME)
+
+    # Verify Paris is selected for Space Krk-Par
+    assert _get_selected_provider(client, SPACE_KRK_PAR_NAME).domain == provider_par
+
+    # Cause connection error on Space Krk-Par (Paris)
+    with _mock_http_client([provider_par]):
+        client.get_attributes(SPACE_KRK_PAR_NAME)
+
+    # Verify Paris is blacklisted for Space Krk-Par
+    assert client._provider_selector.is_graylisted(provider_par_id, space_krk_par_id)
+    assert _get_selected_provider(client, SPACE_KRK_PAR_NAME).domain == provider_krk
+
+    # Verify we can still use Paris for Space Par
+    assert not client._provider_selector.is_graylisted(provider_par_id, space_par_id)
+    assert _get_selected_provider(client, SPACE_PAR_NAME).domain == provider_par
 
 
 def test_get_file_id(client: OnedataFileRESTClient):
