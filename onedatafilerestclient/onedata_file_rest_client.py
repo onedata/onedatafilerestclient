@@ -146,7 +146,7 @@ def _find_available_provider(
                 requests.exceptions.ConnectionError,
                 requests.exceptions.ReadTimeout,
             ):
-                provider_selector.blacklist(provider, space_id)
+                provider_selector.graylist(provider, space_id)
 
         raise NoAvailableProviderForSpaceError(space_specifier)
 
