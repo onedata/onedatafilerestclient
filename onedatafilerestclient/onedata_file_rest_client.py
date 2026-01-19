@@ -279,6 +279,114 @@ class OnedataFileRESTClient:
         url = self._build_op_url(provider, f"/data/{file_id}")
         self._op_client.put(url, data=attributes)
 
+    @_find_available_provider(except_readonly=True)
+    def set_extended_attribute(
+        self,
+        space_specifier: SpaceSpecifier,
+        xattrs: Dict[str, str],
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> None:
+        """Set file or directory extended attributes (xattrs)."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/xattrs")
+        headers = {"Content-Type": "application/rdf+xml"}
+        self._op_client.put(url, data=xattrs, headers=headers)
+
+    @_find_available_provider(except_readonly=True)
+    def set_json_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        metadata: Dict[str, Any],
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> None:
+        """Set file or directory JSON metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/json")
+        headers = {"Content-Type": "application/json"}
+        self._op_client.put(url, data=metadata, headers=headers)
+
+    @_find_available_provider(except_readonly=True)
+    def set_rdf_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        rdf_data: Union[str, bytes],
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> None:
+        """Set file or directory RDF metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/rdf")
+        headers = {"Content-Type": "application/rdf+xml"}
+        self._op_client.put(url, data=rdf_data, headers=headers)
+
+    @_find_available_provider
+    def get_extended_attribute(
+        self,
+        space_specifier: SpaceSpecifier,
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> Dict[str, str]:
+        """Get file or directory extended attributes (xattrs)."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/xattrs")
+        return self._op_client.get(url).json()
+
+    @_find_available_provider
+    def get_json_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> Dict[str, Any]:
+        """Get file or directory JSON metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/json")
+        return self._op_client.get(url).json()
+
+    @_find_available_provider
+    def get_rdf_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> str:
+        """Get file or directory RDF metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/rdf")
+        return self._op_client.get(url).text
+
     @_find_available_provider
     def list_children(
         self,
