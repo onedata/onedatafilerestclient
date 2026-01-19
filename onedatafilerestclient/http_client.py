@@ -27,7 +27,10 @@ class HttpClient:
     session: requests.Session
 
     def __init__(
-        self, *, verify_ssl: bool = True, timeout: Optional[Union[int, Tuple[int, int]]] = None
+        self,
+        *,
+        verify_ssl: bool = True,
+        timeout: Optional[Union[int, Tuple[int, int]]] = None,
     ) -> None:
         """Construct OnedataFileClient instance."""
         self.session = requests.Session()

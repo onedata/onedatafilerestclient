@@ -992,11 +992,7 @@ def test_set_get_extended_attributes(client: OnedataFileRESTClient):
     file_selector = _random_file_selector(file_id, file_path)
 
     # Set extended attributes
-    xattrs = {
-        "license": "CC-0",
-        "author": "John Doe",
-        "version": "1.0"
-    }
+    xattrs = {"license": "CC-0", "author": "John Doe", "version": "1.0"}
     client.set_extended_attribute(space_specifier, xattrs, **file_selector)
 
     # Get and verify extended attributes
@@ -1017,12 +1013,9 @@ def test_set_get_json_metadata(client: OnedataFileRESTClient):
         "experiment": {
             "id": "exp_001",
             "parameters": ["param1", "param2", "param3"],
-            "results": {
-                "accuracy": 0.95,
-                "precision": 0.87
-            }
+            "results": {"accuracy": 0.95, "precision": 0.87},
         },
-        "tags": ["machine-learning", "test-data"]
+        "tags": ["machine-learning", "test-data"],
     }
     client.set_json_metadata(space_specifier, metadata, **file_selector)
 
@@ -1055,9 +1048,9 @@ def test_set_get_rdf_metadata(client: OnedataFileRESTClient):
 
     # Get and verify RDF metadata
     retrieved_rdf = client.get_rdf_metadata(space_specifier, **file_selector)
-    
+
     # Normalize whitespace for comparison since RDF formatting might vary
     def normalize_xml(xml_str):
         return " ".join(xml_str.split())
-    
+
     assert normalize_xml(retrieved_rdf) == normalize_xml(rdf_data)

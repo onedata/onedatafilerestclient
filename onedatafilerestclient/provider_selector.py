@@ -72,7 +72,10 @@ class ProviderSelector:
     _graylist_time_limit_ns: int = 30 * 10**9  # 30 seconds
 
     def __init__(
-        self, *, preferred_providers: Optional[List[ProviderSpecifier]] = None, disable_greylisting: bool = False
+        self,
+        *,
+        preferred_providers: Optional[List[ProviderSpecifier]] = None,
+        disable_greylisting: bool = False,
     ) -> None:
         """Construct ProviderSelector instance."""
         self.preferred_providers = preferred_providers or []
@@ -84,7 +87,7 @@ class ProviderSelector:
         """Check if specified provider is graylisted for given space."""
         if self.disable_greylisting:
             return False
-            
+
         key = (provider_id, space_id)
         if key not in self._provider_graylist_cache:
             return False
@@ -100,7 +103,7 @@ class ProviderSelector:
         """Graylist specified provider for a short while for given space."""
         if self.disable_greylisting:
             return
-            
+
         graylist_time_end_ns = time.time_ns() + self._graylist_time_limit_ns
         key = (provider.id, space_id)
 

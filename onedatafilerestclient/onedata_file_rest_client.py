@@ -180,7 +180,8 @@ class OnedataFileRESTClient:
             verify_ssl=verify_ssl,
         )
         self._provider_selector = ProviderSelector(
-            preferred_providers=preferred_providers, disable_greylisting=disable_greylisting
+            preferred_providers=preferred_providers,
+            disable_greylisting=disable_greylisting,
         )
 
         self._op_client = HttpClient(verify_ssl=verify_ssl, timeout=timeout)
