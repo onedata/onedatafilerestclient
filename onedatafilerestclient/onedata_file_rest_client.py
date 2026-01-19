@@ -296,7 +296,7 @@ class OnedataFileRESTClient:
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
         url = self._build_op_url(provider, f"/data/{file_id}/metadata/xattrs")
-        headers = {"Content-Type": "application/rdf+xml"}
+        headers = {"Content-Type": "application/json"}
         self._op_client.put(url, data=xattrs, headers=headers)
 
     @_find_available_provider(except_readonly=True)
