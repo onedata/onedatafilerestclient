@@ -352,7 +352,7 @@ class OnedataFileRESTClient:
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
         url = self._build_op_url(provider, f"/data/{file_id}/metadata/xattrs")
-        return self._op_client.get(url).json()
+        return typing.cast(Dict[str, str], self._op_client.get(url).json())
 
     @_find_available_provider
     def get_json_metadata(
@@ -369,7 +369,7 @@ class OnedataFileRESTClient:
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
         url = self._build_op_url(provider, f"/data/{file_id}/metadata/json")
-        return self._op_client.get(url).json()
+        return typing.cast(Dict[str, Any], self._op_client.get(url).json())
 
     @_find_available_provider
     def get_rdf_metadata(
