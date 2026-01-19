@@ -2,10 +2,10 @@
 """Provider selector utilities.
 
 Key behaviour:
-- Available provider: provider that is online, meets min version and not readonly 
+- Available provider: provider that is online, meets min version and not readonly
   in case of modifying operations (see `_is_provider_available`).
 - Graylisted provider: a provider that is still “available” but recently failed
-  (e.g. timeout/connection error). It gets lower priority (for a short graylisting 
+  (e.g. timeout/connection error). It gets lower priority (for a short graylisting
   period), when choosing provider for operation, than other available providers.
 - Selection order: active providers are sorted (preferred first, then by version
   descending); graylisted providers are sorted the same way and appended as

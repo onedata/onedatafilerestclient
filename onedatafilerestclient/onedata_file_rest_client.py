@@ -8,7 +8,7 @@ import json
 import sys
 import typing
 from functools import partial, wraps
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import requests.exceptions
 
@@ -169,6 +169,7 @@ class OnedataFileRESTClient:
         *,
         alt_space_fqn_separators: Optional[List[str]] = None,
         verify_ssl: bool = True,
+        timeout: Optional[Union[int, Tuple[int, int]]] = None,
     ):
         """Construct OnedataFileRESTClient instance."""
         self._oz_client = OnezoneRESTClient(
@@ -181,7 +182,7 @@ class OnedataFileRESTClient:
             preferred_providers=preferred_providers
         )
 
-        self._op_client = HttpClient(verify_ssl=verify_ssl)
+        self._op_client = HttpClient(verify_ssl=verify_ssl, timeout=timeout)
         self._op_client.get_session().headers.update({"X-Auth-Token": token})
 
     def __eq__(self, other: object) -> bool:

@@ -7,7 +7,7 @@ __license__ = "This software is released under the MIT license cited in LICENSE.
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple, Union
 
 import requests
 from requests.structures import CaseInsensitiveDict
@@ -23,13 +23,16 @@ _HEADERS_TO_LOG = {"range"}
 class HttpClient:
     """REST-style wrapper over requests library."""
 
-    timeout: int = 8
+    timeout: Union[int, Tuple[int, int]]
     session: requests.Session
 
-    def __init__(self, *, verify_ssl: bool = True) -> None:
+    def __init__(
+        self, *, verify_ssl: bool = True, timeout: Optional[Union[int, Tuple[int, int]]] = None
+    ) -> None:
         """Construct OnedataFileClient instance."""
         self.session = requests.Session()
         self.session.verify = verify_ssl
+        self.timeout = timeout or (8, 30)
 
     def get_session(self) -> requests.Session:
         """Return requests session instance."""
