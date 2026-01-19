@@ -64,6 +64,7 @@ class ProviderSelector:
     """Selector responsible for choosing available provider(s) for space."""
 
     preferred_providers: List[str]
+    disable_greylisting: bool
 
     _cache_size_limit: int = 512
     _provider_for_space_cache: Dict[SpaceSpecifier, SpaceSupportingProvider]
@@ -71,15 +72,19 @@ class ProviderSelector:
     _graylist_time_limit_ns: int = 30 * 10**9  # 30 seconds
 
     def __init__(
-        self, *, preferred_providers: Optional[List[ProviderSpecifier]] = None
+        self, *, preferred_providers: Optional[List[ProviderSpecifier]] = None, disable_greylisting: bool = False
     ) -> None:
         """Construct ProviderSelector instance."""
         self.preferred_providers = preferred_providers or []
+        self.disable_greylisting = disable_greylisting
         self._provider_graylist_cache = {}
         self._provider_for_space_cache = {}
 
     def is_graylisted(self, provider_id: ProviderId, space_id: SpaceId) -> bool:
         """Check if specified provider is graylisted for given space."""
+        if self.disable_greylisting:
+            return False
+            
         key = (provider_id, space_id)
         if key not in self._provider_graylist_cache:
             return False
@@ -93,6 +98,9 @@ class ProviderSelector:
 
     def graylist(self, provider: SpaceSupportingProvider, space_id: SpaceId) -> None:
         """Graylist specified provider for a short while for given space."""
+        if self.disable_greylisting:
+            return
+            
         graylist_time_end_ns = time.time_ns() + self._graylist_time_limit_ns
         key = (provider.id, space_id)
 
