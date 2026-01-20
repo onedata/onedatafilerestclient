@@ -424,6 +424,63 @@ def test_provider_selector_blacklist_isolation(onezone_ip, onezone_admin_token):
     assert _get_selected_provider(client, SPACE_PAR_NAME).domain == provider_par
 
 
+def test_provider_selector_with_disabled_graylisting(
+    onezone_ip, onezone_admin_token, client_krakow, client_paris
+):
+    """Test provider selector with disabled graylisting."""
+    providers = [PROVIDER_KRK_DOMAIN, PROVIDER_PAR_DOMAIN]
+    random.shuffle(providers)
+    first_choice_provider = providers[0]
+
+    client = OnedataFileRESTClient(
+        onezone_ip,
+        onezone_admin_token,
+        [_random_provider_specifier(first_choice_provider)],
+        verify_ssl=False,
+        disable_graylisting=True,
+    )
+
+    space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)
+    file_id = _create_and_sync_file_in_space(
+        space_specifier, client_krakow, client_paris
+    )
+
+    def assert_selected_provider(provider_domain):
+        client.get_attributes(space_specifier, file_id=file_id)
+        assert _get_selected_provider(client, space_specifier).domain == provider_domain
+
+        random_mode = random.choice(["777", "775", "773", "771", "770"])
+        client.set_attributes(space_specifier, {"mode": random_mode}, file_id=file_id)
+        assert _get_selected_provider(client, space_specifier).domain == provider_domain
+
+    # provider 'first_choice_provider' is chosen with accordance to
+    # preferred providers
+    assert_selected_provider(first_choice_provider)
+
+    # with connection error raised and graylisting disabled,
+    # first_choice_provider should not be graylisted
+    with _mock_http_client([first_choice_provider]):
+        # This should fail completely since graylisting is disabled
+        # and preferred provider is unavailable
+        with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
+            client.get_attributes(space_specifier, file_id=file_id)
+
+        assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
+
+    # Verify that no providers are graylisted when graylisting is disabled
+    # pylint: disable=W0212
+    provider_selector = client._provider_selector
+    first_provider_id = _get_provider_id(first_choice_provider)
+    space_id = client.get_space_id(space_specifier)
+
+    # Provider should not be graylisted even after connection error
+    assert not provider_selector.is_graylisted(first_provider_id, space_id)
+
+    # After the connection error, first_choice_provider should still be selected
+    # (no graylisting occurred)
+    assert_selected_provider(first_choice_provider)
+
+
 def test_get_file_id(client: OnedataFileRESTClient):
     """Test 'get_file_id' method."""
     space_specifier = _random_space_specifier(SPACE_KRK_PAR_NAME, client)

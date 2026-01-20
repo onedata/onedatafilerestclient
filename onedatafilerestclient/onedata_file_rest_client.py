@@ -139,6 +139,10 @@ def _find_available_provider(
             oz_rest_client=oz_client,
             except_readonly=except_readonly,
         ):
+            if self._disable_graylisting:
+                kwargs["provider"] = provider
+                return func(self, space_specifier, *args, **kwargs)
+
             try:
                 kwargs["provider"] = provider
                 return func(self, space_specifier, *args, **kwargs)
@@ -160,6 +164,7 @@ class OnedataFileRESTClient:
     _oz_client: OnezoneRESTClient
     _provider_selector: ProviderSelector
     _op_client: HttpClient
+    _disable_graylisting: bool
 
     def __init__(
         self,
@@ -179,9 +184,10 @@ class OnedataFileRESTClient:
             alt_space_fqn_separators=alt_space_fqn_separators,
             verify_ssl=verify_ssl,
         )
+        self._disable_graylisting = disable_graylisting
         self._provider_selector = ProviderSelector(
             preferred_providers=preferred_providers,
-            disable_graylisting=disable_graylisting,
+            disable_graylisting=self._disable_graylisting,
         )
 
         self._op_client = HttpClient(verify_ssl=verify_ssl, timeout=timeout)
