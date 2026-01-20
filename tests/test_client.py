@@ -460,9 +460,9 @@ def test_provider_selector_with_disabled_graylisting(
     # with connection error raised and graylisting disabled,
     # first_choice_provider should not be graylisted
     with _mock_http_client([first_choice_provider]):
-        # This should fail completely since graylisting is disabled
-        # and preferred provider is unavailable
-        with pytest.raises(NoAvailableProviderForSpaceError) as exc_info:
+        # Make sure that when graylisting is disabled, connection and timeout exceptions
+        # are not masked
+        with pytest.raises(requests.exceptions.ConnectionError) as exc_info:
             client.get_attributes(space_specifier, file_id=file_id)
 
         assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
