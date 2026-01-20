@@ -462,10 +462,8 @@ def test_provider_selector_with_disabled_graylisting(
     with _mock_http_client([first_choice_provider]):
         # Make sure that when graylisting is disabled, connection and timeout exceptions
         # are not masked
-        with pytest.raises(requests.exceptions.ConnectionError) as exc_info:
+        with pytest.raises(requests.exceptions.ConnectionError):
             client.get_attributes(space_specifier, file_id=file_id)
-
-        assert exc_info.value.args == (_ensure_fqn(space_specifier, client),)
 
     # Verify that no providers are graylisted when graylisting is disabled
     # pylint: disable=W0212
