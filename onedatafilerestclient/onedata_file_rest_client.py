@@ -170,7 +170,7 @@ class OnedataFileRESTClient:
         alt_space_fqn_separators: Optional[List[str]] = None,
         verify_ssl: bool = True,
         timeout: Optional[Union[int, Tuple[int, int]]] = None,
-        disable_greylisting: bool = False,
+        disable_graylisting: bool = False,
     ):
         """Construct OnedataFileRESTClient instance."""
         self._oz_client = OnezoneRESTClient(
@@ -181,7 +181,7 @@ class OnedataFileRESTClient:
         )
         self._provider_selector = ProviderSelector(
             preferred_providers=preferred_providers,
-            disable_greylisting=disable_greylisting,
+            disable_graylisting=disable_graylisting,
         )
 
         self._op_client = HttpClient(verify_ssl=verify_ssl, timeout=timeout)
