@@ -40,6 +40,5 @@ setup(
     package_data={"onedatafilerestclient": ["py.typed"]},
     include_package_data=True,
     keywords=["Onedata"],
-    test_suite="nose.collector",
     url="https://github.com/onedata/onedatafilerestclient",
 )
