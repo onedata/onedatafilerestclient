@@ -19,35 +19,25 @@ __copyright__ = "Copyright (C) 2024 ACK CYFRONET AGH"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
 import logging
-import sys
 import time
 from datetime import datetime
-from typing import Dict, Final, Iterator, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, Final, Iterator, List, NamedTuple, Optional, Tuple
 
 from packaging.version import Version, parse
 
 from .onezone_rest_client import (
     OnezoneRESTClient,
     ProviderDetails,
-    ProviderId,
-    SpaceId,
-    SpaceSpecifier,
     SpaceSupportAttributes,
 )
-
-if sys.version_info < (3, 11):
-    from typing_extensions import TypeAlias
-else:
-    from typing import TypeAlias
-
+from .types import ProviderId, ProviderSpecifier, SpaceId, SpaceSpecifier
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
 
 _MIN_SUPPORTED_PROVIDER_VERSION: Final[Version] = Version("21.2.1")
-
-ProviderDomain: TypeAlias = str
-ProviderSpecifier: TypeAlias = Union[ProviderId, ProviderDomain]
+_CACHE_SIZE_LIMIT: int = 512
+_GRAYLIST_TIME_LIMIT_NS: int = 30 * 10**9
 
 
 class SpaceSupportingProvider(NamedTuple):
@@ -66,10 +56,10 @@ class ProviderSelector:
     preferred_providers: List[str]
     disable_graylisting: bool
 
-    _cache_size_limit: int = 512
+    _cache_size_limit: int = _CACHE_SIZE_LIMIT
     _provider_for_space_cache: Dict[SpaceSpecifier, SpaceSupportingProvider]
     _provider_graylist_cache: Dict[Tuple[ProviderId, SpaceId], int]
-    _graylist_time_limit_ns: int = 30 * 10**9  # 30 seconds
+    _graylist_time_limit_ns: int = _GRAYLIST_TIME_LIMIT_NS
 
     def __init__(
         self,

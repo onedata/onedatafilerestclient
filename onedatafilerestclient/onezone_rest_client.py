@@ -7,39 +7,14 @@ __license__ = "This software is released under the MIT license cited in LICENSE.
 
 import copy
 import itertools
-import sys
 import time
 import typing
 from functools import lru_cache
-from typing import Dict, Final, List, Optional, Tuple, Union, cast
+from typing import Dict, Final, List, Optional, Tuple, TypedDict, cast
 
 from .errors import SpaceNotFoundError
 from .http_client import HttpClient
-
-if sys.version_info < (3, 11):
-    from typing_extensions import TypeAlias, TypedDict
-else:
-    from typing import TypeAlias, TypedDict
-
-
-ProviderId: TypeAlias = str
-
-SpaceId: TypeAlias = str
-SpaceName: TypeAlias = str
-
-SpaceCanonicalFQN: TypeAlias = str
-"""
-Fully qualified space name in the form: <SpaceName>@<SpaceId>
-"""
-
-SpaceFQN: TypeAlias = str
-"""
-Fully qualified space name in the form: <SpaceName><Separator><SpaceId>
-By default, the canonical separator "@" is accepted, but alternative
-ones can be provided in the 'alt_space_fqn_separators' option.
-"""
-
-SpaceSpecifier: TypeAlias = Union[SpaceName, SpaceFQN]
+from .types import ProviderId, SpaceCanonicalFQN, SpaceId, SpaceName, SpaceSpecifier
 
 
 class SpaceSupportAttributes(TypedDict):
@@ -100,6 +75,7 @@ class AccessTokenScope(TypedDict):
 
 
 _SPACE_ID_CACHE_SIZE_LIMIT: Final[int] = 512
+_TOKEN_SCOPE_CACHE_TIME_LIMIT_NS: int = 2 * 10**9  # 2 seconds
 
 
 class OnezoneRESTClient:
@@ -112,7 +88,7 @@ class OnezoneRESTClient:
 
     _token_scope_cache: Optional[AccessTokenScope] = None
     _token_scope_cache_valid_until_ns: int = 0
-    _token_scope_cache_time_limit_ns: int = 2 * 10**9  # 2 seconds
+    _token_scope_cache_time_limit_ns: int = _TOKEN_SCOPE_CACHE_TIME_LIMIT_NS
 
     def __init__(
         self,

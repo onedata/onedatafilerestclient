@@ -5,10 +5,9 @@ from __future__ import annotations
 
 import inspect
 import json
-import sys
 import typing
 from functools import partial, wraps
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, TypedDict, Union
 
 import requests.exceptions
 
@@ -22,35 +21,22 @@ from .file_attributes import (
     normalize_file_attrs_json,
 )
 from .http_client import HttpClient
-from .onezone_rest_client import (
-    AccessTokenScope,
-    OnezoneRESTClient,
+from .onezone_rest_client import AccessTokenScope, OnezoneRESTClient
+from .provider_selector import ProviderSelector, SpaceSupportingProvider
+from .types import (
+    FileId,
+    FilePath,
+    HTTPTimeout,
+    Json,
+    ProviderSpecifier,
     SpaceFQN,
     SpaceId,
     SpaceSpecifier,
-)
-from .provider_selector import (
-    ProviderSelector,
-    ProviderSpecifier,
-    SpaceSupportingProvider,
 )
 
 __author__ = "Bartek Kryza"
 __copyright__ = "Copyright (C) 2023 Onedata"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
-
-
-if sys.version_info < (3, 11):
-    from typing_extensions import TypeAlias, TypedDict
-else:
-    from typing import TypeAlias, TypedDict
-
-
-FileId: TypeAlias = str
-FilePath: TypeAlias = str
-"""
-File path relative to space, that is without space specifier prefix.
-"""
 
 
 class ListChildrenResult(TypedDict):
@@ -174,7 +160,7 @@ class OnedataFileRESTClient:
         *,
         alt_space_fqn_separators: Optional[List[str]] = None,
         verify_ssl: bool = True,
-        timeout: Optional[Union[int, Tuple[int, int]]] = None,
+        timeout: Optional[HTTPTimeout] = None,
         disable_graylisting: bool = False,
     ):
         """Construct OnedataFileRESTClient instance."""
@@ -309,7 +295,7 @@ class OnedataFileRESTClient:
     def set_json_metadata(
         self,
         space_specifier: SpaceSpecifier,
-        metadata: Dict[str, Any],
+        metadata: Json,
         *,
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
@@ -368,14 +354,14 @@ class OnedataFileRESTClient:
         file_path: Optional[FilePath] = None,
         file_id: Optional[FileId] = None,
         provider: Optional[SpaceSupportingProvider] = None,
-    ) -> Dict[str, Any]:
+    ) -> Json:
         """Get file or directory JSON metadata."""
         provider = self._ensure_provider(provider)
         file_id = self._resolve_file_id(
             space_specifier, file_path=file_path, file_id=file_id, provider=provider
         )
         url = self._build_op_url(provider, f"/data/{file_id}/metadata/json")
-        return typing.cast(Dict[str, Any], self._op_client.get(url).json())
+        return typing.cast(Json, self._op_client.get(url).json())
 
     @_find_available_provider
     def get_rdf_metadata(
