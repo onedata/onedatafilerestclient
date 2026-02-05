@@ -13,23 +13,31 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 from .errors import OnedataRESTError
+from .types import HTTPTimeout
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
 
 _HEADERS_TO_LOG = {"range"}
+_DEFAULT_TIMEOUT = (8, 30)
 
 
 class HttpClient:
     """REST-style wrapper over requests library."""
 
-    timeout: int = 8
+    timeout: HTTPTimeout
     session: requests.Session
 
-    def __init__(self, *, verify_ssl: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        verify_ssl: bool = True,
+        timeout: Optional[HTTPTimeout] = None,
+    ) -> None:
         """Construct OnedataFileClient instance."""
         self.session = requests.Session()
         self.session.verify = verify_ssl
+        self.timeout = timeout if timeout is not None else _DEFAULT_TIMEOUT
 
     def get_session(self) -> requests.Session:
         """Return requests session instance."""

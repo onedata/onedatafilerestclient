@@ -3,7 +3,7 @@
 
 from setuptools import setup
 
-__version__ = "21.2.9.1"
+__version__ = "25.0.0"
 
 CLASSIFIERS = [
     "Development Status :: 4 - Beta",
@@ -40,6 +40,5 @@ setup(
     package_data={"onedatafilerestclient": ["py.typed"]},
     include_package_data=True,
     keywords=["Onedata"],
-    test_suite="nose.collector",
     url="https://github.com/onedata/onedatafilerestclient",
 )

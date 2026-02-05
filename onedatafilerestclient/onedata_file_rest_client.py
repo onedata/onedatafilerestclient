@@ -5,10 +5,9 @@ from __future__ import annotations
 
 import inspect
 import json
-import sys
 import typing
 from functools import partial, wraps
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, TypedDict, Union
 
 import requests.exceptions
 
@@ -22,35 +21,22 @@ from .file_attributes import (
     normalize_file_attrs_json,
 )
 from .http_client import HttpClient
-from .onezone_rest_client import (
-    AccessTokenScope,
-    OnezoneRESTClient,
+from .onezone_rest_client import AccessTokenScope, OnezoneRESTClient
+from .provider_selector import ProviderSelector, SpaceSupportingProvider
+from .types import (
+    FileId,
+    FilePath,
+    HTTPTimeout,
+    Json,
+    ProviderSpecifier,
     SpaceFQN,
     SpaceId,
     SpaceSpecifier,
-)
-from .provider_selector import (
-    ProviderSelector,
-    ProviderSpecifier,
-    SpaceSupportingProvider,
 )
 
 __author__ = "Bartek Kryza"
 __copyright__ = "Copyright (C) 2023 Onedata"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
-
-
-if sys.version_info < (3, 11):
-    from typing_extensions import TypeAlias, TypedDict
-else:
-    from typing import TypeAlias, TypedDict
-
-
-FileId: TypeAlias = str
-FilePath: TypeAlias = str
-"""
-File path relative to space, that is without space specifier prefix.
-"""
 
 
 class ListChildrenResult(TypedDict):
@@ -139,6 +125,10 @@ def _find_available_provider(
             oz_rest_client=oz_client,
             except_readonly=except_readonly,
         ):
+            if self._disable_graylisting:
+                kwargs["provider"] = provider
+                return func(self, space_specifier, *args, **kwargs)
+
             try:
                 kwargs["provider"] = provider
                 return func(self, space_specifier, *args, **kwargs)
@@ -160,6 +150,7 @@ class OnedataFileRESTClient:
     _oz_client: OnezoneRESTClient
     _provider_selector: ProviderSelector
     _op_client: HttpClient
+    _disable_graylisting: bool
 
     def __init__(
         self,
@@ -169,6 +160,8 @@ class OnedataFileRESTClient:
         *,
         alt_space_fqn_separators: Optional[List[str]] = None,
         verify_ssl: bool = True,
+        timeout: Optional[HTTPTimeout] = None,
+        disable_graylisting: bool = False,
     ):
         """Construct OnedataFileRESTClient instance."""
         self._oz_client = OnezoneRESTClient(
@@ -177,11 +170,13 @@ class OnedataFileRESTClient:
             alt_space_fqn_separators=alt_space_fqn_separators,
             verify_ssl=verify_ssl,
         )
+        self._disable_graylisting = disable_graylisting
         self._provider_selector = ProviderSelector(
-            preferred_providers=preferred_providers
+            preferred_providers=preferred_providers,
+            disable_graylisting=self._disable_graylisting,
         )
 
-        self._op_client = HttpClient(verify_ssl=verify_ssl)
+        self._op_client = HttpClient(verify_ssl=verify_ssl, timeout=timeout)
         self._op_client.get_session().headers.update({"X-Auth-Token": token})
 
     def __eq__(self, other: object) -> bool:
@@ -276,6 +271,114 @@ class OnedataFileRESTClient:
         )
         url = self._build_op_url(provider, f"/data/{file_id}")
         self._op_client.put(url, data=attributes)
+
+    @_find_available_provider(except_readonly=True)
+    def set_extended_attribute(
+        self,
+        space_specifier: SpaceSpecifier,
+        xattrs: Dict[str, str],
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> None:
+        """Set file or directory extended attributes (xattrs)."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/xattrs")
+        headers = {"Content-Type": "application/json"}
+        self._op_client.put(url, data=xattrs, headers=headers)
+
+    @_find_available_provider(except_readonly=True)
+    def set_json_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        metadata: Json,
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> None:
+        """Set file or directory JSON metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/json")
+        headers = {"Content-Type": "application/json"}
+        self._op_client.put(url, data=metadata, headers=headers)
+
+    @_find_available_provider(except_readonly=True)
+    def set_rdf_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        rdf_data: Union[str, bytes],
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> None:
+        """Set file or directory RDF metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/rdf")
+        headers = {"Content-Type": "application/rdf+xml"}
+        self._op_client.put(url, data=rdf_data, headers=headers)
+
+    @_find_available_provider
+    def get_extended_attribute(
+        self,
+        space_specifier: SpaceSpecifier,
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> Dict[str, str]:
+        """Get file or directory extended attributes (xattrs)."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/xattrs")
+        return typing.cast(Dict[str, str], self._op_client.get(url).json())
+
+    @_find_available_provider
+    def get_json_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> Json:
+        """Get file or directory JSON metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/json")
+        return typing.cast(Json, self._op_client.get(url).json())
+
+    @_find_available_provider
+    def get_rdf_metadata(
+        self,
+        space_specifier: SpaceSpecifier,
+        *,
+        file_path: Optional[FilePath] = None,
+        file_id: Optional[FileId] = None,
+        provider: Optional[SpaceSupportingProvider] = None,
+    ) -> str:
+        """Get file or directory RDF metadata."""
+        provider = self._ensure_provider(provider)
+        file_id = self._resolve_file_id(
+            space_specifier, file_path=file_path, file_id=file_id, provider=provider
+        )
+        url = self._build_op_url(provider, f"/data/{file_id}/metadata/rdf")
+        return self._op_client.get(url).text
 
     @_find_available_provider
     def list_children(

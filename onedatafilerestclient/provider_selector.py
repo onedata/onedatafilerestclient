@@ -2,10 +2,10 @@
 """Provider selector utilities.
 
 Key behaviour:
-- Available provider: provider that is online, meets min version and not readonly 
+- Available provider: provider that is online, meets min version and not readonly
   in case of modifying operations (see `_is_provider_available`).
 - Graylisted provider: a provider that is still “available” but recently failed
-  (e.g. timeout/connection error). It gets lower priority (for a short graylisting 
+  (e.g. timeout/connection error). It gets lower priority (for a short graylisting
   period), when choosing provider for operation, than other available providers.
 - Selection order: active providers are sorted (preferred first, then by version
   descending); graylisted providers are sorted the same way and appended as
@@ -19,35 +19,25 @@ __copyright__ = "Copyright (C) 2024 ACK CYFRONET AGH"
 __license__ = "This software is released under the MIT license cited in LICENSE.txt"
 
 import logging
-import sys
 import time
 from datetime import datetime
-from typing import Dict, Final, Iterator, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, Final, Iterator, List, NamedTuple, Optional, Tuple
 
 from packaging.version import Version, parse
 
 from .onezone_rest_client import (
     OnezoneRESTClient,
     ProviderDetails,
-    ProviderId,
-    SpaceId,
-    SpaceSpecifier,
     SpaceSupportAttributes,
 )
-
-if sys.version_info < (3, 11):
-    from typing_extensions import TypeAlias
-else:
-    from typing import TypeAlias
-
+from .types import ProviderId, ProviderSpecifier, SpaceId, SpaceSpecifier
 
 _logger = logging.getLogger(__name__)
 _logger.addHandler(logging.NullHandler())
 
 _MIN_SUPPORTED_PROVIDER_VERSION: Final[Version] = Version("21.2.1")
-
-ProviderDomain: TypeAlias = str
-ProviderSpecifier: TypeAlias = Union[ProviderId, ProviderDomain]
+_CACHE_SIZE_LIMIT: int = 512
+_GRAYLIST_TIME_LIMIT_NS: int = 30 * 10**9
 
 
 class SpaceSupportingProvider(NamedTuple):
@@ -64,22 +54,30 @@ class ProviderSelector:
     """Selector responsible for choosing available provider(s) for space."""
 
     preferred_providers: List[str]
+    disable_graylisting: bool
 
-    _cache_size_limit: int = 512
+    _cache_size_limit: int = _CACHE_SIZE_LIMIT
     _provider_for_space_cache: Dict[SpaceSpecifier, SpaceSupportingProvider]
     _provider_graylist_cache: Dict[Tuple[ProviderId, SpaceId], int]
-    _graylist_time_limit_ns: int = 30 * 10**9  # 30 seconds
+    _graylist_time_limit_ns: int = _GRAYLIST_TIME_LIMIT_NS
 
     def __init__(
-        self, *, preferred_providers: Optional[List[ProviderSpecifier]] = None
+        self,
+        *,
+        preferred_providers: Optional[List[ProviderSpecifier]] = None,
+        disable_graylisting: bool = False,
     ) -> None:
         """Construct ProviderSelector instance."""
         self.preferred_providers = preferred_providers or []
+        self.disable_graylisting = disable_graylisting
         self._provider_graylist_cache = {}
         self._provider_for_space_cache = {}
 
     def is_graylisted(self, provider_id: ProviderId, space_id: SpaceId) -> bool:
         """Check if specified provider is graylisted for given space."""
+        if self.disable_graylisting:
+            return False
+
         key = (provider_id, space_id)
         if key not in self._provider_graylist_cache:
             return False
@@ -93,6 +91,9 @@ class ProviderSelector:
 
     def graylist(self, provider: SpaceSupportingProvider, space_id: SpaceId) -> None:
         """Graylist specified provider for a short while for given space."""
+        if self.disable_graylisting:
+            return
+
         graylist_time_end_ns = time.time_ns() + self._graylist_time_limit_ns
         key = (provider.id, space_id)
 
