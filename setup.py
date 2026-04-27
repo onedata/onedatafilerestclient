@@ -3,7 +3,7 @@
 
 from setuptools import setup
 
-__version__ = '25.1'
+__version__ = '25.1.0'
 
 CLASSIFIERS = [
     "Development Status :: 4 - Beta",
