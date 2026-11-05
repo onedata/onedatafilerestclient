@@ -3,7 +3,7 @@
 
 from setuptools import setup
 
-__version__ = '21.02.3'
+__version__ = "25.2.0"
 
 CLASSIFIERS = [
     "Development Status :: 4 - Beta",
@@ -11,30 +11,34 @@ CLASSIFIERS = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.5",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: System :: Filesystems",
 ]
 
-with open("README.md", "rt") as f:
+with open("README.md", "rt", encoding="utf-8") as f:
     DESCRIPTION = f.read()
 
-REQUIREMENTS = ["requests"]
+REQUIREMENTS = ["packaging", "requests", "typing-extensions>=4.3.0"]
 
-setup(name="onedatafilerestclient",
-      author="Bartek Kryza",
-      author_email="bkryza@gmail.com",
-      classifiers=CLASSIFIERS,
-      description="Onedata REST file API client",
-      install_requires=REQUIREMENTS,
-      license="MIT",
-      long_description=DESCRIPTION,
-      packages=["onedatafilerestclient"],
-      keywords=["Onedata"],
-      test_suite="nose.collector",
-      url="https://github.com/onedata/onedatafilerestclient",
-      version=__version__)
+setup(
+    name="onedatafilerestclient",
+    version=__version__,
+    description="Onedata REST file API client",
+    long_description=DESCRIPTION,
+    long_description_content_type="text/markdown",
+    author="Bartek Kryza",
+    author_email="bkryza@gmail.com",
+    license="MIT",
+    classifiers=CLASSIFIERS,
+    python_requires=">=3.10",
+    install_requires=REQUIREMENTS,
+    packages=["onedatafilerestclient"],
+    package_data={"onedatafilerestclient": ["py.typed"]},
+    include_package_data=True,
+    keywords=["Onedata"],
+    url="https://github.com/onedata/onedatafilerestclient",
+)

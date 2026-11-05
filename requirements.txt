@@ -1,1 +1,3 @@
+packaging
 requests
+typing-extensions>=4.3.0

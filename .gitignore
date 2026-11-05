@@ -5,3 +5,6 @@ __pycache__
 onedatafilerestclient.egg-info/
 tmp
 test.py
+onedatafilerestclient-tests-results.xml
+build
+dist
